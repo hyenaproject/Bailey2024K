@@ -1,4 +1,4 @@
-# Using time-varying carrying capacity to monitor environmental drivers of population change: the example of spotted hyenas.
+# Effects of environmental change on population growth: monitoring time-varying carrying capacity\\ in free-ranging spotted hyenas
 
 This repository includes code and plots for associated with the paper Bailey et al. 2024 currently in pre-print (DOI XXX). This code relies on two separate repositories: [SHIM](https://github.com/hyenaproject/SHIM) and [hyenaR](https://github.com/hyenaproject/hyenaR) for working with data from the Ngorongoro Hyena Project.
 
