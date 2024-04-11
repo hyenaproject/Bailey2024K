@@ -1,0 +1,1838 @@
+---
+title: "Plotting simulation results"
+author: "Liam"
+date: '2022-05-18'
+output: html_document
+---
+
+# Pre-plotting
+
+Load required packages
+
+```{r pkg}
+library(ggplot2)
+library(hyenaR)
+library(dplyr)
+library(here)
+```
+
+Define which simulation type we're using
+
+```{r}
+
+#Model 2 (polynomial age and random effect of year nested within clan)
+#Simulations have a variety of start points to reduce initialization bias
+folder_name <- "STEP1_estimate_K"
+db.path     <- "../hyena_data/Fisidata_2022_08_08.sqlite"
+start_year  <- 1997
+```
+
+# PLOT 1: Absolute change in K and N over time
+
+Prep data
+
+```{r}
+
+## EXTRACT ESTIMATED K
+years <- start_year:2020
+
+pb_yr <- progress::progress_bar$new(total = length(years))
+
+Kplot_data <- purrr::map_df(.x = years,
+                            .f = function(year, folder_name){
+                              
+                              pb_yr$tick()
+                              
+                              txt_files <- list.files(here(paste0("./analysis/MS_preliminary_results/", folder_name, "/", year)),
+                                                      pattern = ".txt", full.names = TRUE)
+                              
+                              allsims <- purrr::map_df(.x = txt_files,
+                                                       .f = function(filepath){
+                                                         
+                                                         readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) %>%
+                                                           dplyr::mutate(sim = stringr::str_extract(filepath, "(?<=pop)[0-9]+"))
+                                                         
+                                                       })
+                              
+                              estK <- allsims %>% 
+                                dplyr::group_by(.data$sim) %>% 
+                                dplyr::mutate(start_pop = first(pop_size)) %>% 
+                                dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>% 
+                                dplyr::summarise(K = median(.data$pop_size),
+                                                 start_size = first(start_pop))
+                              
+                              plot_data <- estK %>% 
+                                dplyr::summarise(year = year,
+                                                 globalK = median(.data$K),
+                                                 lower = min(.data$K),
+                                                 upper = max(.data$K),
+                                                 points = list(data.frame(pop_size = .data$K,
+                                                                          start_pop = .data$start_size)))
+                              
+                              return(plot_data)
+                              
+                            }, folder_name = folder_name)
+
+
+## EXTRACT REAL POP DATA OVER TIME
+hyenaR::load_package_database.full(here::here("../hyena_data/Fisidata_25_05_2022.sqlite"))
+
+real_pop <- dplyr::tibble(date = seq(as.Date("1996-05-01"), as.Date("2020-12-01"), by = "1 month")) %>% 
+  dplyr::mutate(pop_size = hyenaR::fetch_pop_number(main.clans = TRUE, at = .data$date,
+                                                    CPUcores = 75, .parallel.min = 285))
+
+```
+
+Plot
+
+```{r fig.height = 2.5, fig.width = 3.5}
+
+#K DATA NEEDS DATE COLS SO IT CAN BE PLOTTED
+#WE NEED TO SHOW THIS IT IS FLAT DURING THE YEAR (i.e. WE ASSUME IT IS FIXED)
+Kplot_data_dates <- Kplot_data %>% 
+  dplyr::mutate(start = lubridate::ymd(paste(.data$year, "01", "01", sep = "-")),
+                end = lubridate::ymd(paste(.data$year + 1, "01", "01", sep = "-"))) %>% tidyr::pivot_longer(cols = c(start, end), values_to = "date")
+
+#IF WE WANT TO PLOT EXACT ESTIMATES FROM EACH SIM
+# point_data <- Kplot_data %>% 
+#   tidyr::unnest(cols = points)
+
+(K_plot <- ggplot() +
+    geom_line(data = real_pop, aes(x = date, y = pop_size),
+              colour = "black", size = 0.5, lty = 5) +
+    geom_ribbon(data = Kplot_data_dates, aes(x = date, ymin = lower, ymax = upper), fill = "grey25", alpha = 0.35) +
+    geom_line(data = Kplot_data_dates, aes(x = date, y = globalK),
+              colour = "grey25", size = 0.75) +
+    geom_text(data = slice(real_pop, n()),
+              aes(x = date + 650, y = pop_size, label = "Observed\npopulation")) +
+    geom_text(data = slice(Kplot_data_dates, n()),
+              aes(x = date + 450, y = globalK, label = "K"), fontface = "bold") +
+    scale_x_date(name = "",
+                 breaks = seq.Date(as.Date("1995-01-01"), as.Date("2020-01-01"), by = "5 year"),
+                 limits = c(as.Date("1995-01-01"), as.Date("2024-01-01")), date_labels = "%Y") +
+    scale_y_continuous(limits = c(0, 1000), breaks = seq(0, 1500, 250),
+                       name = "Population size",
+                       expand = c(0, 0)) +
+    scale_shape_manual(values = c(21, 22, 23), name = "", guide = NULL) +
+    labs(title = "Change in N and K over time") +
+    theme_classic() +
+    theme(axis.text = element_text(colour = "black"),
+          axis.title = element_text(size = 10),
+          axis.title.y = element_text(margin = margin(r = 5), size = 12),
+          plot.margin = margin(t = 20, r = 10, l = 10)))
+
+```
+
+# PLOT 2: dN and dK over time on same plot
+
+**NOTE:** LIKELY NOT NEEDED BECAUSE WE PREFER PLOT 3
+
+Prep data
+
+```{r}
+
+dK <- Kplot_data %>% 
+  mutate(lambdaK = lead(globalK)/globalK,
+         df = "K") %>% 
+  filter(!is.na(lambdaK)) %>% 
+  select(year, value = lambdaK, df)
+
+#For lambda of N we take time steps to be middle of the year
+dN <- real_pop %>% 
+  filter(lubridate::month(date) == 6) %>% 
+  mutate(lambdaN = lead(pop_size)/pop_size,
+         year = lubridate::year(date),
+         df = "N") %>% 
+  filter(!is.na(lambdaN)) %>% 
+  select(year, value = lambdaN, df)
+
+plot_data <- bind_rows(dK, dN)
+
+```
+
+Plot
+
+```{r}
+
+ggplot(data = plot_data) +
+  geom_hline(yintercept = 1, lty = 2) +
+  geom_line(aes(x = year, y = value, colour = df),
+            size = 1) +
+  scale_y_continuous(limits = c(0.25, 1.75)) +
+  scale_colour_manual(values = c("black", "red"), name = "") +
+  labs(y = "<- Decreasing        \U03BB        Increasing ->", title = "\U03BB N and K", subtitle = "\U03BBN compares values from June - June") +
+  theme_classic() +
+  theme(axis.title.x = element_blank(),
+        axis.text = element_text(colour = "black"),
+        plot.margin = margin(r = 15, l = 10, t = 10, b = 10))
+
+```
+Plot w/ area
+
+```{r}
+
+ggplot() +
+  geom_area(data = dK, aes(x = year, y = value - 1),
+            fill = "grey25", alpha = 0.25,
+            colour = "black", size = 0.1) +
+  geom_area(data = dN, aes(x = year, y = value - 1),
+            fill = "red", alpha = 0.25,
+            colour = "red", size = 0.1) +
+  geom_hline(yintercept = 0, lty = 2, size = 0.5) +
+  scale_y_continuous(limits = c(-0.75, 0.75),
+                     breaks = seq(-0.75, 0.75, 0.25),
+                     labels = seq(-0.75, 0.75, 0.25) + 1) +
+  labs(y = "<- Decreasing        \U03BB        Increasing ->",
+       title = "\U03BB N and K", subtitle = "\U03BBN compares values from June - June") +
+  theme_classic() +
+  theme(axis.title.x = element_blank(),
+        axis.text = element_text(colour = "black"),
+        plot.margin = margin(r = 15, l = 10, t = 10, b = 10))
+
+```
+
+# PLOT 3: dN v dK with quadrants
+
+Prep data. We want to calculate different values of dK by comparing all estimates of K with all others in the next time step.
+
+```{r}
+
+years <- 1996:2020
+
+pb_yr <- progress::progress_bar$new(total = length(years))
+
+Kplot_data_raw <- purrr::map_df(.x = years,
+                                .f = function(year, folder_name){
+                                  
+                                  pb_yr$tick()
+                                  
+                                  txt_files <- list.files(here(paste0("./analysis/MS_preliminary_results/", folder_name, "/", year)),
+                                                          pattern = ".txt", full.names = TRUE)
+                                  
+                                  allsims <- purrr::map_df(.x = txt_files,
+                                                           .f = function(filepath){
+                                                             
+                                                             readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) %>%
+                                                               dplyr::mutate(sim = stringr::str_extract(filepath, "(?<=pop)[0-9]+"))
+                                                             
+                                                           })
+                                  
+                                  allsims %>% 
+                                    dplyr::group_by(.data$sim) %>% 
+                                    dplyr::mutate(start_pop = first(pop_size)) %>% 
+                                    dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>% 
+                                    dplyr::summarise(K = median(.data$pop_size),
+                                                     start_size = first(start_pop),
+                                                     year = year)
+                                  
+                                }, folder_name = folder_name)
+
+```
+
+Now that we have all the K data, we can estimate the change in K from 1 year to another. To include uncertainty, we compare all possible combos of K estimates from t and t + 1.
+
+```{r}
+
+#Only go to 2019, because we can't get a change in K in the last year
+years <- 1996:2019
+combos <- expand.grid(index1 = 1:12, index2 = 1:12)
+
+dK_data <- purrr::map_df(years, .f = function(year){
+  
+  t_data <- Kplot_data_raw %>% 
+    filter(year == {{year}})
+  
+  t1_data <- Kplot_data_raw %>% 
+    filter(year == {{year}} + 1)
+  
+  dK_vector <- purrr::map_dbl(1:nrow(combos), .f = function(row){
+    
+    current_combo <- combos[row, ]
+    
+    Kt  <- t_data$K[current_combo$index1]
+    Kt1 <- t1_data$K[current_combo$index2]
+    
+    Kt1/Kt
+    
+  })
+  
+  tibble(year = year, dK = dK_vector)
+  
+})
+
+#For every year determine the median, lower and upper values of dK
+dK_data_error <- dK_data %>% 
+  group_by(year) %>% 
+  summarise(value = median(dK, na.rm = TRUE),
+            lower = min(dK, na.rm = TRUE),
+            upper = max(dK, na.rm = TRUE),
+            df = "K")
+
+```
+
+Do the same thing for N. We pick every possible starting month from Jan - Dec (assume a 1year difference)
+
+```{r}
+
+#Only go to 2019, because we can't get a change in K in the last year
+years <- 1996:2019
+month_combos <- 1:12
+
+real_pop <- real_pop %>% 
+  mutate(year = lubridate::year(date))
+
+dN_data <- purrr::map_df(years, .f = function(year){
+  
+  t_data <- real_pop %>% 
+    filter(year == {{year}})
+  
+  t1_data <- real_pop %>% 
+    filter(year == {{year}} + 1)
+  
+  if (year == 1996) {
+    
+    input_combos <- month_combos[month_combos >= 5]
+    
+  } else {
+    
+    input_combos <- month_combos
+    
+  }
+  
+  dN_vector <- purrr::map_dbl(input_combos, .f = function(month){
+    
+    Nt  <- t_data %>% 
+      filter(lubridate::month(date) == month) %>% 
+      pull(pop_size)
+    Nt1 <- t1_data %>% 
+      filter(lubridate::month(date) == month) %>% 
+      pull(pop_size)
+    
+    Nt1/Nt
+    
+  })
+  
+  tibble(year = year, dN = dN_vector)
+  
+})
+
+#For every year determine the median, lower and upper values of dK
+dN_data_error <- dN_data %>% 
+  group_by(year) %>% 
+  summarise(value = median(dN, na.rm = TRUE),
+            lower = min(dN, na.rm = TRUE),
+            upper = max(dN, na.rm = TRUE),
+            df = "N")
+
+```
+
+```{r}
+
+### OLD DATA WRANGLING WITHOUT ERROR
+# dK <- Kplot_data %>% 
+#   mutate(lambdaK = lead(globalK)/globalK,
+#          df = "K") %>% 
+#   filter(!is.na(lambdaK)) %>% 
+#   select(year, value = lambdaK, df)
+
+#For lambda of N we take time steps to be middle of the year
+# dN <- real_pop %>% 
+#   filter(lubridate::month(date) == 6) %>% 
+#   mutate(lambdaN = lead(pop_size)/pop_size,
+#          year = lubridate::year(date),
+#          df = "N") %>% 
+#   filter(!is.na(lambdaN)) %>% 
+#   select(year, value = lambdaN, df)
+
+plot_data3 <- bind_rows(dK_data_error, dN_data_error) %>% 
+  select(-upper, -lower) %>% 
+  tidyr::pivot_wider(names_from = df, values_from = value, names_prefix = "lambda")
+
+dK_data_errorbar <- dK_data_error %>% 
+  left_join(select(dN_data_error, year, dN = value), by = "year")
+
+dN_data_errorbar <- dN_data_error %>% 
+  left_join(select(dK_data_error, year, dK = value), by = "year")
+
+```
+
+Plot
+
+```{r}
+
+#WITHOUT YEAR LABELS
+
+#Limit the size of the errorbar for 2019 to reach 2 (just to keep axis even)
+dK_data_errorbar <- dK_data_errorbar %>% 
+  mutate(upper_trunc = case_when(upper > 2 ~ 2,
+                                 TRUE ~ upper))
+
+ggplot() +
+  geom_hline(yintercept = 1, lty = 2) +
+  geom_vline(xintercept = 1, lty = 2) +
+  # geom_segment(aes(x = 1.05, xend = 1.05, y = 1.25, yend = 1.5),
+  #              colour = "black", size = 1,
+  #              arrow = arrow(length = unit(0.03, "npc"))) +
+  #Add horizontal error bar
+  geom_errorbarh(data = dK_data_errorbar, aes(y = dN, xmin = lower, xmax = upper_trunc)) +
+  #Manually add segment showing that error for 2019 extends beyond 2
+  geom_segment(data = filter(dK_data_errorbar, year == 2019),
+               aes(y = dN, yend = dN, x = lower, xend = upper_trunc), arrow = arrow(length = unit(0.1, "inches"))) +
+  geom_text(data = filter(dK_data_errorbar, year == 2019),
+            aes(y = dN - 0.05, x = upper_trunc, label = signif(upper, 2)),
+            size = 3) +
+  #Add vertical error bar
+  geom_errorbar(data = dN_data_errorbar, aes(x = dK, ymin = lower, ymax = upper)) +
+  geom_point(data = plot_data3, aes(x = lambdaK, y = lambdaN),
+             shape = 21, colour = "black", fill = "grey50", size = 2) +
+  # geom_text(aes(x = c(0.35, 0.35, 1.6, 1.6, 1.15),
+  #               y = c(0.5, 1.5, 0.5, 1.5, 1.375),
+  #               label = c("Fig2C (end)", "Fig2C (start)", "Allee effect?", "Fig2A", "Fig2B"))) +
+  scale_x_continuous(limits = c(0, NA),
+                     breaks = seq(0, 2, 0.25)) +
+  scale_y_continuous(limits = c(0.5, 1.5)) +
+  labs(x = "<- Decreasing       \U03BBK        Increasing ->",
+       y = "<- Decreasing       \U03BBN        Increasing ->") +
+  coord_equal() +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"))
+
+```
+
+```{r}
+
+#WITH YEAR LABELS
+library(ggrepel)
+
+ggplot() +
+  geom_hline(yintercept = 1, lty = 2) +
+  geom_vline(xintercept = 1, lty = 2) +
+  # geom_segment(aes(x = 1.05, xend = 1.05, y = 1.25, yend = 1.5),
+  #              colour = "black", size = 1,
+  #              arrow = arrow(length = unit(0.03, "npc"))) +
+  #Add horizontal error bar
+  geom_errorbarh(data = dK_data_errorbar, aes(y = dN, xmin = lower, xmax = upper_trunc)) +
+  #Manually add segment showing that error for 2019 extends beyond 2
+  geom_segment(data = filter(dK_data_errorbar, year == 2019),
+               aes(y = dN, yend = dN, x = lower, xend = upper_trunc), arrow = arrow(length = unit(0.1, "inches"))) +
+  geom_text(data = filter(dK_data_errorbar, year == 2019),
+            aes(y = dN - 0.05, x = upper_trunc, label = signif(upper, 2)),
+            size = 3) +
+  #Add vertical error bar
+  geom_errorbar(data = dN_data_errorbar, aes(x = dK, ymin = lower, ymax = upper)) +
+  geom_point(data = plot_data3, aes(x = lambdaK, y = lambdaN),
+             shape = 21, colour = "black", fill = "grey50", size = 2) +
+  #Add year text
+  geom_text_repel(data = plot_data3, aes(x = lambdaK, y = lambdaN, label = year),
+                  force = 10, size = 3) +
+  # geom_text(aes(x = c(0.35, 0.35, 1.6, 1.6, 1.15),
+  #               y = c(0.5, 1.5, 0.5, 1.5, 1.375),
+  #               label = c("Fig2C (end)", "Fig2C (start)", "Allee effect?", "Fig2A", "Fig2B"))) +
+  scale_x_continuous(limits = c(0, NA),
+                     breaks = seq(0, 2, 0.25)) +
+  scale_y_continuous(limits = c(0.5, 1.5)) +
+  labs(x = "<- Decreasing       \U03BBK        Increasing ->",
+       y = "<- Decreasing       \U03BBN        Increasing ->") +
+  coord_equal() +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"))
+
+```
+
+# PLOT 4a: Time varying corr dN/K against K-N
+
+Prep data
+
+```{r}
+
+#Now that we have estimated dN for every month we can use the median
+#estimate of dN (rather than the value just from June) for estimating tcor
+#FIXME: Originally estimated K-N from June, but this introduces similar problems. We could either:
+#a) calculate K-N for all values of K and N and take the median
+#b) estimate difference between median K and mean N
+#Currently, we do b) but could switch
+plot_data4a <- real_pop %>% 
+  group_by(year) %>% 
+  summarise(N = mean(pop_size)) %>% 
+  #Old code using June
+  # real_pop %>% 
+  # filter(lubridate::month(date) == 6) %>% 
+  # mutate(year = lubridate::year(date)) %>% 
+  # select(year, N = pop_size) %>% 
+  left_join(select(Kplot_data, year, K = globalK), by = "year") %>% 
+  mutate(diff = K - N) %>% 
+  left_join(select(dN_data_error, year, lambdaN = value), by = "year") %>% 
+  filter(!is.na(lambdaN))
+
+library(timevarcorr)
+
+dNKcorr_epanechnikov <- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "epanechnikov"))
+dNKcorr_box<- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "box"))
+dNKcorr_normal <- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "normal"))
+correlation_combo <- dNKcorr_epanechnikov %>% 
+  rename(epan = r) %>% 
+  left_join(rename(dNKcorr_box, box = r), by = "t") %>% 
+  left_join(rename(dNKcorr_normal, normal = r), by = "t") %>% 
+  # tidyr::pivot_longer(cols = epanechnikov:normal, names_to = "method", values_to = "r") %>% 
+  rename(year = t)
+
+plot_data4a <- plot_data4a %>% 
+  left_join(correlation_combo, by = "year") %>% 
+  tidyr::pivot_longer(cols = epan:normal, names_to = "method", values_to = "r")
+
+```
+
+Plot
+
+```{r}
+
+#Separate out cases where K > N (normal) and where K < N (uncommon).
+#We don't have enough data on cases where K < N to make conclusions on how line should be fitted.
+plot_data4a <- plot_data4a %>% 
+  mutate(sign = diff > 0)
+
+ggplot() +
+  geom_vline(xintercept = 0, lty = 2) +
+  geom_point(data = plot_data4a, aes(x = diff, y = r)) +
+  #Add year text
+  geom_text_repel(data = plot_data4a, aes(x = diff, y = r, label = year),
+                  force = 7, size = 3, max.overlaps = 14) +
+  geom_smooth(data = filter(plot_data4a, sign), aes(x = diff, y = r), method = "lm", se = FALSE) +
+  facet_wrap(facets = ~method) +
+  scale_x_continuous(limits = c(-500, 500)) +
+  # scale_y_continuous(limits = c(0, 1)) +
+  labs(title = "K-N compared to time varying correlation",
+       y = "Pearson's correlation (time varying by year)",
+       x = "K - N") +
+  theme_classic()
+
+```
+What if we use other method to estimate K-N
+
+```{r}
+
+#FIXME: Originally estimated K-N from June, but this introduces similar problems. We could either:
+#a) calculate K-N for all values of K and N and take the median
+#b) estimate difference between median K and mean N
+#Here we try a) instead of b)
+years <- 1996:2020
+
+real_pop <- real_pop %>% 
+  mutate(year = lubridate::year(date))
+
+KN_data <- purrr::map_df(years, .f = function(year){
+  
+  K_data <- Kplot_data_raw %>% 
+    filter(year == {{year}})
+  
+  N_data <- real_pop %>% 
+    filter(year == {{year}})
+  
+  combos <- expand.grid(Kindex = 1:nrow(K_data),
+                        Nindex = 1:nrow(N_data))
+  
+  KN_vector <- purrr::map_dbl(1:nrow(combos), .f = function(row){
+    
+    K <- K_data$K[combos$Kindex[row]]
+    N <- N_data$pop_size[combos$Nindex[row]]
+    
+    K - N
+    
+  })
+  
+  tibble(year = year, diff = KN_vector)
+  
+})
+
+#We can now include a median, upper and lower value
+plot_data4a <- KN_data %>% 
+  group_by(year) %>% 
+  summarise(median = median(diff),
+            lower = min(diff),
+            upper = max(diff)) %>% 
+  left_join(select(dN_data_error, year, lambdaN = value), by = "year") %>% 
+  left_join(select(Kplot_data, year, K = globalK), by = "year") %>% 
+  filter(!is.na(lambdaN))
+
+library(timevarcorr)
+
+dNKcorr_epanechnikov <- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "epanechnikov"))
+dNKcorr_box<- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "box"))
+dNKcorr_normal <- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "normal"))
+correlation_combo <- dNKcorr_epanechnikov %>% 
+  rename(epan = r) %>% 
+  left_join(rename(dNKcorr_box, box = r), by = "t") %>% 
+  left_join(rename(dNKcorr_normal, normal = r), by = "t") %>% 
+  # tidyr::pivot_longer(cols = epanechnikov:normal, names_to = "method", values_to = "r") %>% 
+  rename(year = t)
+
+plot_data4a <- plot_data4a %>% 
+  left_join(correlation_combo, by = "year") %>% 
+  tidyr::pivot_longer(cols = epan:normal, names_to = "method", values_to = "r")
+
+```
+
+Plot
+
+```{r}
+
+#Separate out cases where K > N (normal) and where K < N (uncommon).
+#We don't have enough data on cases where K < N to make conclusions on how line should be fitted.
+plot_data4a <- plot_data4a %>% 
+  mutate(sign = median > 0)
+
+ggplot() +
+  geom_vline(xintercept = 0, lty = 2) +
+  geom_errorbarh(data = plot_data4a, aes(y = r, xmin = lower, xmax = upper)) +
+  geom_point(data = plot_data4a, aes(x = median, y = r),
+             shape = 21, colour = "black", fill = "grey50") +
+  #Add year text
+  geom_text_repel(data = plot_data4a, aes(x = median, y = r, label = year),
+                  force = 7, size = 2.5, max.overlaps = 14) +
+  geom_smooth(data = filter(plot_data4a, sign), aes(x = median, y = r), method = "lm", se = FALSE) +
+  facet_wrap(facets = ~method) +
+  scale_x_continuous(limits = c(-500, 500)) +
+  # scale_y_continuous(limits = c(0, 1)) +
+  labs(title = "K-N compared to time varying correlation of \U03BBN & K",
+       subtitle = "Horizontal errorbars show range of K-N\ncomparing all estimates of K and values of N in 1st of each month",
+       y = "Pearson's correlation between \U03BBN & K\n(time varying by year)",
+       x = "K - N") +
+  theme_classic()
+
+```
+
+'Normal' kernel method seems most successful (Epanechnikov throws numerous warnings).
+
+```{r}
+
+ggplot() +
+  geom_vline(xintercept = 0, lty = 2) +
+  geom_errorbarh(data = filter(plot_data4a, method == "normal"),
+                 aes(y = r, xmin = lower, xmax = upper)) +
+  geom_point(data = filter(plot_data4a, method == "normal"),
+             aes(x = median, y = r),
+             shape = 21, colour = "black", fill = "grey50") +
+  #Add year text
+  geom_text_repel(data = filter(plot_data4a, method == "normal"),
+                  aes(x = median, y = r, label = year),
+                  force = 7, size = 2.5, max.overlaps = 14) +
+  geom_smooth(data = filter(plot_data4a, method == "normal" & sign),
+              aes(x = median, y = r), method = "lm", se = FALSE, formula = y~x) +
+  # facet_wrap(facets = ~method) +
+  scale_x_continuous(limits = c(-500, 500)) +
+  # scale_y_continuous(limits = c(0, 1)) +
+  labs(title = "K-N compared to time varying correlation of \U03BBN & K (normal kernel)",
+       subtitle = "Horizontal errorbars show range of K-N\ncomparing all estimates of K and values of N in 1st of each month",
+       y = "Pearson's correlation between \U03BBN & K\n(time varying by year)",
+       x = "K - N") +
+  theme_classic()
+
+```
+
+Let's see how it looks with different values of h.
+
+Prep data
+
+```{r}
+
+plot_data4a <- KN_data %>% 
+  group_by(year) %>% 
+  summarise(median = median(diff),
+            lower = min(diff),
+            upper = max(diff)) %>% 
+  left_join(select(dN_data_error, year, lambdaN = value), by = "year") %>% 
+  left_join(select(Kplot_data, year, K = globalK), by = "year") %>% 
+  filter(!is.na(lambdaN)) %>% 
+  mutate(sign = median > 0)
+
+library(timevarcorr)
+
+#We know from last time that estimation with LOO-CV is ~15
+#We will try 5, 10, 15.3 (LOO-CV), 20, 25, 30, 40
+dNKcorr_normal_5 <- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "normal", h = 5)) %>% 
+  mutate(h = "5")
+dNKcorr_normal_10 <- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "normal", h = 10)) %>% 
+  mutate(h = "10")
+dNKcorr_normal_15 <- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "normal")) %>% 
+  mutate(h = "15.3")
+dNKcorr_normal_20 <- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "normal", h = 20)) %>% 
+  mutate(h = "20")
+dNKcorr_normal_25 <- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "normal", h = 25)) %>% 
+  mutate(h = "25")
+dNKcorr_normal_30 <- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "normal", h = 30)) %>% 
+  mutate(h = "30")
+dNKcorr_normal_40 <- with(plot_data4a, tcor(x = K, y = lambdaN, t = year, kernel = "normal", h = 40)) %>% 
+  mutate(h = "40")
+
+correlation_combo <- bind_rows(dNKcorr_normal_5, dNKcorr_normal_10) %>% 
+  bind_rows(dNKcorr_normal_15) %>% 
+  bind_rows(dNKcorr_normal_20) %>% 
+  bind_rows(dNKcorr_normal_25) %>% 
+  bind_rows(dNKcorr_normal_30) %>% 
+  bind_rows(dNKcorr_normal_40) %>% 
+  tidyr::pivot_wider(names_from = h, values_from = r) %>% 
+  rename(year = t)
+
+timecorr_datatest <- plot_data4a %>% 
+  left_join(correlation_combo, by = "year") %>% 
+  tidyr::pivot_longer(cols = `5`:`40`, names_to = "h", values_to = "r")
+
+```
+
+Plot
+
+```{r}
+
+ggplot() +
+  geom_vline(xintercept = 0, lty = 2) +
+  geom_point(data = timecorr_datatest, aes(x = median, y = r, colour = h)) +
+  geom_smooth(data = filter(timecorr_datatest, sign), aes(x = median, y = r, colour = h), method = "lm", se = FALSE, size = 1) +
+  scale_x_continuous(limits = c(-500, 500)) +
+  facet_wrap(facets = ~h) +
+  # scale_y_continuous(limits = c(0, 1)) +
+  labs(title = "K-N compared to time varying correlation of \U03BBN & K (normal kernel)",
+       subtitle = "Horizontal errorbars show range of K-N\ncomparing all estimates of K and values of N in 1st of each month",
+       y = "Pearson's correlation between \U03BBN & K\n(time varying by year)",
+       x = "K - N") +
+  theme_classic()
+
+```
+
+# PLOT 4b: dN against K-N
+
+Prep data
+
+```{r}
+
+#Update to include K-N errorbars
+plot_data4b <- KN_data %>% 
+  group_by(year) %>% 
+  summarise(median = median(diff),
+            lower = min(diff),
+            upper = max(diff)) %>% 
+  left_join(select(dN_data_error, year, lambdaN = value), by = "year") %>% 
+  left_join(select(Kplot_data, year, K = globalK), by = "year") %>% 
+  filter(!is.na(lambdaN))
+
+dN_data_errorbar2 <- dN_data_errorbar %>% 
+  left_join(select(plot_data4b, year, median), by = "year")
+
+```
+
+Plot
+
+```{r}
+
+#WITHOUT YEAR LABELS
+ggplot() +
+  geom_hline(yintercept = 1, lty = 2) +
+  geom_vline(xintercept = 0, lty = 2) +
+  geom_errorbarh(data = plot_data4b, aes(y = lambdaN, xmin = lower, xmax = upper), height = 0) +
+  geom_errorbar(data = dN_data_errorbar2, aes(x = median, ymin = lower, ymax = upper), width = 0) +
+  geom_point(data = plot_data4b, aes(x = median, y = lambdaN),
+             shape = 21, fill = "grey50", colour = "black") + 
+  labs(title = "Relationship between K-N and \U03BBN",
+       subtitle = "Errorbars show range of possible values using all estimates of K\nand N in 1st of each month",
+       x = "K - N",
+       y = "<- Decreasing       \U03BBN        Increasing ->") +
+  scale_x_continuous(limits = c(-500, 500)) +
+  scale_y_continuous(limits = c(0.5, 1.5)) +
+  theme_classic()
+
+```
+
+```{r}
+
+#WITH YEAR LABELS
+ggplot() +
+  geom_hline(yintercept = 1, lty = 2) +
+  geom_vline(xintercept = 0, lty = 2) +
+  geom_errorbarh(data = plot_data4b, aes(y = lambdaN, xmin = lower, xmax = upper), height = 0) +
+  geom_errorbar(data = dN_data_errorbar2, aes(x = median, ymin = lower, ymax = upper), width = 0) +
+  geom_point(data = plot_data4b, aes(x = median, y = lambdaN),
+             shape = 21, fill = "grey50", colour = "black") + 
+  #Add year text
+  geom_text_repel(data = plot_data4b,
+                  aes(x = median, y = lambdaN, label = year),
+                  force = 7, size = 2.5, max.overlaps = 14) +
+  labs(title = "Relationship between K-N and \U03BBN",
+       subtitle = "Errorbars show range of possible values using all estimates of K\nand N in 1st of each month",
+       x = "K - N",
+       y = "<- Decreasing       \U03BBN        Increasing ->") +
+  scale_x_continuous(limits = c(-500, 500)) +
+  scale_y_continuous(limits = c(0.5, 1.5)) +
+  theme_classic()
+
+```
+
+# PLOT 5a: Observed VR & K over time
+
+Extract observed VRs from model frame data (should be more easily accessible...)
+
+```{r}
+
+F_surv          <- model.frame(HyenaPopmod:::survival_F_clan_rank_year)
+M_predisp_surv  <- model.frame(HyenaPopmod:::survival_M_predisp_clan_rank_year)
+M_postdisp_surv <- model.frame(HyenaPopmod:::survival_M_postdisp_clan_year)
+twinning        <- model.frame(HyenaPopmod:::twinning_clan_rank_year)
+primi_repro     <- model.frame(HyenaPopmod:::repro_Fprimi_clan_rank_year)
+nonprimi_repro  <- model.frame(HyenaPopmod:::repro_Fnonprimi_clan_rank_year)
+
+```
+
+Centre K values
+
+```{r}
+
+K_plot_data_ctr <- Kplot_data %>% 
+  mutate(meanK = mean(globalK), sdK = sd(globalK)) %>% 
+  mutate(across(globalK:upper, ~(. - meanK)/sdK))
+
+```
+
+Because we are using data from models, we only have VRs every year. This will also fit with our estimation of VRs at model equilibrium.
+
+```{r}
+
+F_surv_yr <- F_surv %>% 
+  group_by(year) %>% 
+  summarise(sum_surv = sum(surv),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_surv, n = n)) %>% 
+  mutate(mean_val = mean(mean), sd_val = sd(mean)) %>% 
+  mutate(across(mean:upper, ~(. - mean_val)/sd_val))
+
+ggplot() +
+  geom_ribbon(data = F_surv_yr, aes(x = year, ymin = lower, ymax = upper), fill = "yellow", alpha = 0.25) +
+  geom_line(data = F_surv_yr, aes(x = year, y = mean), colour = "grey25") +
+  geom_ribbon(data = K_plot_data_ctr, aes(x = year, ymin = lower, ymax = upper), fill = "grey25", alpha = 0.25) +
+  geom_line(data = K_plot_data_ctr, aes(x = year, y = globalK), colour = "grey25") +
+  geom_hline(yintercept = 0, lty = 2) +
+  scale_y_continuous(limits = c(-4.5, 4.5)) +
+  theme_classic()
+
+```
+
+```{r}
+
+M_predisp_surv_yr <- M_predisp_surv %>% 
+  group_by(year) %>% 
+  summarise(sum_surv = sum(surv),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_surv, n = n)) %>% 
+  mutate(mean_val = mean(mean), sd_val = sd(mean)) %>% 
+  mutate(across(mean:upper, ~(. - mean_val)/sd_val))
+
+ggplot() +
+  geom_ribbon(data = M_predisp_surv_yr, aes(x = year, ymin = lower, ymax = upper), fill = "green", alpha = 0.25) +
+  geom_line(data = M_predisp_surv_yr, aes(x = year, y = mean), colour = "grey25") +
+  geom_ribbon(data = K_plot_data_ctr, aes(x = year, ymin = lower, ymax = upper), fill = "grey25", alpha = 0.25) +
+  geom_line(data = K_plot_data_ctr, aes(x = year, y = globalK), colour = "grey25") +
+  geom_hline(yintercept = 0, lty = 2) +
+  scale_y_continuous(limits = c(-4.5, 4.5)) +
+  theme_classic()
+
+```
+
+```{r}
+
+M_postdisp_surv_yr <- M_postdisp_surv %>% 
+  group_by(year) %>% 
+  summarise(sum_surv = sum(surv),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_surv, n = n)) %>% 
+  mutate(mean_val = mean(mean), sd_val = sd(mean)) %>% 
+  mutate(across(mean:upper, ~(. - mean_val)/sd_val))
+
+ggplot() +
+  geom_ribbon(data = M_postdisp_surv_yr, aes(x = year, ymin = lower, ymax = upper), fill = "red", alpha = 0.25) +
+  geom_line(data = M_postdisp_surv_yr, aes(x = year, y = mean), colour = "grey25") +
+  geom_ribbon(data = K_plot_data_ctr, aes(x = year, ymin = lower, ymax = upper), fill = "grey25", alpha = 0.25) +
+  geom_line(data = K_plot_data_ctr, aes(x = year, y = globalK), colour = "grey25") +
+  geom_hline(yintercept = 0, lty = 2) +
+  scale_y_continuous(limits = c(-5, 5)) +
+  theme_classic()
+
+```
+
+```{r}
+
+twinning_yr <- twinning %>% 
+  group_by(year) %>% 
+  summarise(sum_twin = sum(twin),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_twin, n = n)) %>% 
+  mutate(mean_val = mean(mean), sd_val = sd(mean)) %>% 
+  mutate(across(mean:upper, ~(. - mean_val)/sd_val))
+
+ggplot() +
+  geom_ribbon(data = twinning_yr, aes(x = year, ymin = lower, ymax = upper), fill = "blue", alpha = 0.25) +
+  geom_line(data = twinning_yr, aes(x = year, y = mean), colour = "grey25") +
+  geom_ribbon(data = K_plot_data_ctr, aes(x = year, ymin = lower, ymax = upper), fill = "grey25", alpha = 0.25) +
+  geom_line(data = K_plot_data_ctr, aes(x = year, y = globalK), colour = "grey25") +
+  geom_hline(yintercept = 0, lty = 2) +
+  scale_y_continuous(limits = c(-5, 5)) +
+  theme_classic()
+
+```
+
+```{r}
+
+primi_repro_yr <- primi_repro %>% 
+  group_by(year) %>% 
+  summarise(sum_repro = sum(repro),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_repro, n = n)) %>% 
+  mutate(mean_val = mean(mean), sd_val = sd(mean)) %>% 
+  mutate(across(mean:upper, ~(. - mean_val)/sd_val))
+
+ggplot() +
+  geom_ribbon(data = primi_repro_yr, aes(x = year, ymin = lower, ymax = upper), fill = "orange", alpha = 0.25) +
+  geom_line(data = primi_repro_yr, aes(x = year, y = mean), colour = "grey25") +
+  geom_ribbon(data = K_plot_data_ctr, aes(x = year, ymin = lower, ymax = upper), fill = "grey25", alpha = 0.25) +
+  geom_line(data = K_plot_data_ctr, aes(x = year, y = globalK), colour = "grey25") +
+  geom_hline(yintercept = 0, lty = 2) +
+  scale_y_continuous(limits = c(-5, 5)) +
+  theme_classic()
+
+```
+
+```{r}
+
+nonprimi_repro_yr <- nonprimi_repro %>% 
+  group_by(year) %>% 
+  summarise(sum_repro = sum(repro),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_repro, n = n)) %>% 
+  mutate(mean_val = mean(mean), sd_val = sd(mean)) %>% 
+  mutate(across(mean:upper, ~(. - mean_val)/sd_val))
+
+ggplot() +
+  geom_ribbon(data = nonprimi_repro_yr, aes(x = year, ymin = lower, ymax = upper), fill = "pink", alpha = 0.25) +
+  geom_line(data = nonprimi_repro_yr, aes(x = year, y = mean), colour = "grey25") +
+  geom_ribbon(data = K_plot_data_ctr, aes(x = year, ymin = lower, ymax = upper), fill = "grey25", alpha = 0.25) +
+  geom_line(data = K_plot_data_ctr, aes(x = year, y = globalK), colour = "grey25") +
+  geom_hline(yintercept = 0, lty = 2) +
+  scale_y_continuous(limits = c(-5, 5)) +
+  theme_classic()
+
+```
+
+# PLOT 5b: Time varying corr b/w VR & K
+
+Extract observed VRs from model frame data (should be more easily accessible...)
+
+```{r}
+
+F_surv          <- model.frame(HyenaPopmod:::survival_F_clan_rank_year)
+M_predisp_surv  <- model.frame(HyenaPopmod:::survival_M_predisp_clan_rank_year)
+M_postdisp_surv <- model.frame(HyenaPopmod:::survival_M_postdisp_clan_year)
+twinning        <- model.frame(HyenaPopmod:::twinning_clan_rank_year)
+primi_repro     <- model.frame(HyenaPopmod:::repro_Fprimi_clan_rank_year)
+nonprimi_repro  <- model.frame(HyenaPopmod:::repro_Fnonprimi_clan_rank_year)
+
+```
+
+```{r}
+
+F_surv_yr <- F_surv %>% 
+  group_by(year) %>% 
+  summarise(sum_surv = sum(surv),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_surv, n = n),
+         VR = "Female surv")
+
+M_predisp_surv_yr <- M_predisp_surv %>% 
+  group_by(year) %>% 
+  summarise(sum_surv = sum(surv),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_surv, n = n),
+         VR = "Male predisp surv")
+
+M_postdisp_surv_yr <- M_postdisp_surv %>% 
+  group_by(year) %>% 
+  summarise(sum_surv = sum(surv),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_surv, n = n),
+         VR = "Male postdisp surv")
+
+twinning_yr <- twinning %>% 
+  group_by(year) %>% 
+  summarise(sum_twin = sum(twin),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_twin, n = n),
+         VR = "Twinning")
+
+primi_repro_yr <- primi_repro %>% 
+  group_by(year) %>% 
+  summarise(sum_repro = sum(repro),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_repro, n = n),
+         VR = "Primiparous repro")
+
+nonprimi_repro_yr <- nonprimi_repro %>% 
+  group_by(year) %>% 
+  summarise(sum_repro = sum(repro),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_repro, n = n),
+         VR = "Non-primiparous repro")
+
+df_life <- list(F_surv_yr, M_predisp_surv_yr, M_postdisp_surv_yr, twinning_yr, primi_repro_yr, nonprimi_repro_yr)
+
+```
+
+Estimate time varying cor for each
+
+```{r}
+
+library(timevarcorr)
+
+purrr::imap(df_life, .f = ~{
+  
+  cor_data <- left_join(..1, select(Kplot_data, year, globalK), by = "year")
+  
+  with(cor_data, tcor(x = globalK, y = mean, t = year, kernel = "normal")) %>% 
+    mutate(VR = cor_data$VR[1])
+  
+}) %>% 
+  dplyr::bind_rows() -> timevarcorr_all
+
+ggplot(data = timevarcorr_all) +
+  geom_line(aes(x = t, y = r, colour = VR)) +
+  theme_classic()
+
+```
+
+#PLOT 6: VR at equilibrium over time
+
+VR at equilibrium has been extracted in ~/simulation_results/analysis/MS_preliminary_results/model2_multistart_v036/estimate_VR.R
+
+```{r}
+
+VReq <- readRDS(file = "~/simulation_results/analysis/MS_preliminary_results/model2_multistart_v036/allsimdataVR.RDS")
+
+```
+
+## Plot 6b: Time varying corr b/w VR @ eq & K
+
+```{r}
+#Combine VR at equilibrium and K
+tcor_data <- VReq %>% 
+  mutate(year = as.numeric(year)) %>% 
+  tidyr::pivot_longer(cols = allFsurv:twin) %>% 
+  group_by(name, year) %>% 
+  summarise(min = min(value),
+            max = max(value),
+            mean = mean(value), .groups = "drop") %>% 
+  left_join(select(Kplot_data, year, globalK), by = "year")
+
+```
+
+We estimate time-varying correlation b/w VR @ equilibrium and K using all kernel type (epanechnikov, normal, and box). Epanechnikov often fails/returns NAs and errors; therefore, we'll just focus on comparing box and normal method.
+
+### F adult survival
+
+```{r}
+
+# Fadult_tcor_epan <- with(filter(tcor_data, name == "adultFsurv"), tcor(x = mean, y = globalK, t = year, kernel = "epanechnikov"))
+Fadult_tcor_normal <- with(filter(tcor_data, name == "adultFsurv"), tcor(x = mean, y = globalK, t = year, kernel = "normal"))
+Fadult_tcor_box <- with(filter(tcor_data, name == "adultFsurv"), tcor(x = mean, y = globalK, t = year, kernel = "box"))
+
+Fadult_tcor_both <- Fadult_tcor_normal %>% 
+  mutate(VR = "adultFsurv", kernel = "normal") %>% 
+  bind_rows(Fadult_tcor_box %>% 
+              mutate(VR = "adultFsurv", kernel = "box"))
+
+```
+
+### F cub survival
+
+```{r}
+
+# Fcub_tcor_epan <- with(filter(tcor_data, name == "cubFsurv"), tcor(x = mean, y = globalK, t = year, kernel = "epanechnikov"))
+Fcub_tcor_normal <- with(filter(tcor_data, name == "cubFsurv"), tcor(x = mean, y = globalK, t = year, kernel = "normal"))
+Fcub_tcor_box <- with(filter(tcor_data, name == "cubFsurv"), tcor(x = mean, y = globalK, t = year, kernel = "box"))
+
+Fcub_tcor_both <- Fcub_tcor_normal %>% 
+  mutate(VR = "cubFsurv", kernel = "normal") %>% 
+  bind_rows(Fcub_tcor_box %>% 
+              mutate(VR = "cubFsurv", kernel = "box"))
+
+```
+
+### Pre-dispersal male survival
+
+```{r}
+
+# preMsurv_tcor_epan <- with(filter(tcor_data, name == "preMsurv"), tcor(x = mean, y = globalK, t = year, kernel = "epanechnikov"))
+preMsurv_tcor_normal <- with(filter(tcor_data, name == "preMsurv"), tcor(x = mean, y = globalK, t = year, kernel = "normal"))
+preMsurv_tcor_box <- with(filter(tcor_data, name == "preMsurv"), tcor(x = mean, y = globalK, t = year, kernel = "box"))
+
+preMsurv_tcor_both <- preMsurv_tcor_normal %>% 
+  mutate(VR = "preMsurv", kernel = "normal") %>% 
+  bind_rows(preMsurv_tcor_box %>% 
+              mutate(VR = "preMsurv", kernel = "box"))
+
+```
+
+### Post-dispersal male survival
+
+```{r}
+
+# postMsurv_tcor_epan <- with(filter(tcor_data, name == "postMsurv"), tcor(x = mean, y = globalK, t = year, kernel = "epanechnikov"))
+postMsurv_tcor_normal <- with(filter(tcor_data, name == "postMsurv"), tcor(x = mean, y = globalK, t = year, kernel = "normal"))
+postMsurv_tcor_box <- with(filter(tcor_data, name == "postMsurv"), tcor(x = mean, y = globalK, t = year, kernel = "box"))
+
+postMsurv_tcor_both <- postMsurv_tcor_normal %>% 
+  mutate(VR = "postMsurv", kernel = "normal") %>% 
+  bind_rows(postMsurv_tcor_box %>% 
+              mutate(VR = "postMsurv", kernel = "box"))
+
+```
+
+### Primi repro
+
+```{r}
+
+# primi_tcor_epan <- with(filter(tcor_data, name == "primirepro"), tcor(x = mean, y = globalK, t = year, kernel = "epanechnikov"))
+primi_tcor_normal <- with(filter(tcor_data, name == "primirepro"), tcor(x = mean, y = globalK, t = year, kernel = "normal"))
+primi_tcor_box <- with(filter(tcor_data, name == "primirepro"), tcor(x = mean, y = globalK, t = year, kernel = "box"))
+
+primi_tcor_both <- primi_tcor_normal %>% 
+  mutate(VR = "primirepro", kernel = "normal") %>% 
+  bind_rows(primi_tcor_box %>% 
+              mutate(VR = "primirepro", kernel = "box"))
+
+```
+
+### NonPrimi repro
+
+```{r}
+
+# nonprimi_tcor_epan <- with(filter(tcor_data, name == "nonprimirepro"), tcor(x = mean, y = globalK, t = year, kernel = "epanechnikov"))
+nonprimi_tcor_normal <- with(filter(tcor_data, name == "nonprimirepro"), tcor(x = mean, y = globalK, t = year, kernel = "normal"))
+nonprimi_tcor_box <- with(filter(tcor_data, name == "nonprimirepro"), tcor(x = mean, y = globalK, t = year, kernel = "box"))
+
+nonprimi_tcor_both <- nonprimi_tcor_normal %>% 
+  mutate(VR = "nonprimirepro", kernel = "normal") %>% 
+  bind_rows(nonprimi_tcor_box %>% 
+              mutate(VR = "nonprimirepro", kernel = "box"))
+
+```
+
+### Twin
+
+```{r}
+
+# twin_tcor_epan <- with(filter(tcor_data, name == "twin"), tcor(x = mean, y = globalK, t = year, kernel = "epanechnikov"))
+twin_tcor_normal <- with(filter(tcor_data, name == "twin"), tcor(x = mean, y = globalK, t = year, kernel = "normal"))
+twin_tcor_box <- with(filter(tcor_data, name == "twin"), tcor(x = mean, y = globalK, t = year, kernel = "box"))
+
+twin_tcor_both <- twin_tcor_normal %>% 
+  mutate(VR = "twin", kernel = "normal") %>% 
+  bind_rows(twin_tcor_box %>% 
+              mutate(VR = "twin", kernel = "box"))
+
+```
+
+Combine all results and plot
+
+```{r}
+
+## LOOK AT PLOTS FOR NORMAL AND BOX
+tcor_plot_data <- Fadult_tcor_both %>% 
+  bind_rows(Fcub_tcor_both) %>% 
+  bind_rows(preMsurv_tcor_both) %>% 
+  bind_rows(postMsurv_tcor_both) %>% 
+  bind_rows(primi_tcor_both) %>% 
+  bind_rows(nonprimi_tcor_both) %>% 
+  bind_rows(twin_tcor_both) %>% 
+  as_tibble()
+
+```
+
+```{r, fig.width = 5}
+ggplot(data = tcor_plot_data) +
+  geom_hline(yintercept = 0, lty = 2, size = 1) +
+  geom_line(aes(x = t, y = r, colour = VR)) +
+  scale_colour_brewer(type = "qual", palette = "Dark2") +
+  scale_y_continuous(breaks = seq(-8, 8, 1)/10) +
+  facet_wrap(facets = ~kernel) +
+  labs(title = "Time varying correlation between vital rates & K",
+       y = "Pearson's correlation between vital rates & K\n(time varying by year)") +
+  theme_classic() +
+  theme(axis.title.x = element_blank())
+```
+
+#PLOT 7: N, dN, K, dK grid
+
+Prep data
+
+```{r}
+
+dK <- Kplot_data %>% 
+  mutate(lambdaK = lead(globalK)/globalK,
+         df = "K") %>% 
+  filter(!is.na(lambdaK)) %>% 
+  select(year, value = lambdaK, df)
+
+K <- Kplot_data %>% 
+  select(year, value = globalK)
+
+#For lambda of N we take time steps to be middle of the year
+dN <- real_pop %>% 
+  filter(lubridate::month(date) == 6) %>% 
+  mutate(lambdaN = lead(pop_size)/pop_size,
+         year = lubridate::year(date),
+         df = "N") %>% 
+  filter(!is.na(lambdaN)) %>% 
+  select(year, value = lambdaN, df)
+
+N <- real_pop %>% 
+  filter(lubridate::month(date) == 6) %>% 
+  mutate(year = lubridate::year(date)) %>% 
+  select(year, value = pop_size)
+
+
+#Create list of data that we can reference to create grid
+data_list <- list(N = N, dN = dN, K = K, dK = dK)
+combos    <- expand.grid(xaxis = c("N", "dN", "K", "dK"),
+                         yaxis = c("N", "dN", "K", "dK"))
+
+```
+
+Create list of plots
+
+```{r, warning = FALSE, fig.height = 7, fig.width = 7}
+
+plots <- purrr::map(1:nrow(combos), .f = ~{
+  
+  xaxis <- data_list[[combos[..1, 1]]]
+  yaxis <- data_list[[combos[..1, 2]]]
+  
+  plot_data <- left_join(xaxis, yaxis, by = "year")
+  
+  ggplot(data = plot_data) +
+    geom_point(aes(x = value.x, y = value.y)) +
+    geom_smooth(aes(x = value.x, y = value.y), size = 0.5, lty = 2, method = "lm", formula = y~x) +
+    theme_classic() +
+    labs(x = combos[..1, 1], y = combos[..1, 2])
+  
+})
+
+library(patchwork)
+
+wrap_plots(plots, ncol = 4, nrow = 4)
+
+```
+
+#PLOT 8: Underlying model predictions
+
+## F. survival
+
+```{r}
+
+spaMM:::spaMM.options(separation_max = 11)
+
+Fmod_data <- model.frame(HyenaPopmod:::survival_F_clan_rank_year)
+
+F_surv_mixmod <- spaMM::fitme(surv ~ poly(age, 4)*rank_category +
+                                clan_size +
+                                clan_size:rank_category + start_clan + (1|start_clan:year),
+                              data = Fmod_data, family = "binomial", method = "PQL/L")
+
+```
+
+Categorical plot
+
+```{r}
+
+new_data <- expand.grid(clan_size = 0:max(Fmod_data$clan_size),
+                        rank_category = c("top5", "lower.ranking"),
+                        age = c(0, 12, 24, 60, 120, 180, 220),
+                        start_clan = "A", year = 0)
+
+pred <- predict(F_surv_mixmod, newdata = new_data,
+                variance = list(predVar = TRUE),
+                type = "link")
+
+plot_data <- new_data %>% 
+  mutate(surv = boot::inv.logit(as.numeric(pred)),
+         lower = boot::inv.logit(as.numeric(pred) - attr(pred, which = "predVar")),
+         upper = boot::inv.logit(as.numeric(pred) + attr(pred, which = "predVar")))
+
+ggplot(data = plot_data) +
+  geom_ribbon(aes(x = clan_size, ymin = lower, ymax = upper, fill = as.factor(rank_category)),
+              alpha = 0.45) +
+  geom_line(aes(x = clan_size, y = surv, lty = as.factor(rank_category))) +
+  facet_wrap(facets = ~age) +
+  scale_fill_manual(values = c("grey15", "grey85")) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.title = element_blank())
+
+```
+
+Categorical plot (clan size)
+
+```{r}
+
+new_data <- expand.grid(clan_size = as.integer(seq(0, max(Fmod_data$clan_size), length.out = 10)),
+                        rank_category = c("top5", "lower.ranking"),
+                        age = 0:220,
+                        start_clan = "A", year = 0)
+
+pred <- predict(F_surv_mixmod, newdata = new_data,
+                variance = list(predVar = TRUE),
+                type = "link")
+
+plot_data <- new_data %>% 
+  mutate(surv = boot::inv.logit(as.numeric(pred)),
+         lower = boot::inv.logit(as.numeric(pred) - attr(pred, which = "predVar")),
+         upper = boot::inv.logit(as.numeric(pred) + attr(pred, which = "predVar")))
+
+ggplot(data = plot_data) +
+  geom_ribbon(aes(x = age, ymin = lower, ymax = upper, fill = as.factor(rank_category)),
+              alpha = 0.45) +
+  geom_line(aes(x = age, y = surv, lty = as.factor(rank_category))) +
+  facet_wrap(facets = ~clan_size) +
+  scale_fill_manual(values = c("grey15", "grey85")) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.title = element_blank())
+
+```
+
+3D plot w/ colour
+
+```{r}
+
+plot_data <- expand.grid(clan_size = 0:max(Fmod_data$clan_size),
+                         rank_category = c("top5", "lower.ranking"),
+                         age = seq(0, 220, 1),
+                         start_clan = "A", year = 0) %>% 
+  mutate(surv = as.numeric(predict(F_surv_mixmod, newdata = ., type = "response", verbose = c(showpbar = FALSE))))
+
+ggplot(data = plot_data) +
+  geom_tile(aes(x = age, y = clan_size, fill = surv)) +
+  facet_wrap(facets = ~rank_category) +
+  scale_fill_viridis_c(option = "magma", limits = c(NA, 1),
+                       guide = guide_colorbar(barwidth = unit(0.75, "cm"),
+                                              barheight = unit(5, "cm"))) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic()
+
+```
+
+## M. predisp survival
+
+```{r}
+
+Mpremod_data <- model.frame(HyenaPopmod:::survival_M_predisp_clan_rank_year)
+
+preMsurv_mixmod <- spaMM::fitme(surv ~ poly(age, 2)*rank_category +
+                                  clan_size +
+                                  clan_size:rank_category + start_clan + (1|start_clan:year),
+                                data = filter(Mpremod_data, age >= 6 & age <=24), family = "binomial", method = "PQL/L")
+
+```
+
+Categorical plot
+
+```{r}
+
+new_data <- expand.grid(clan_size = 0:max(Fmod_data$clan_size),
+                        rank_category = c("top5", "lower.ranking"),
+                        age = seq(6, 24, 1),
+                        start_clan = "A", year = 0)
+
+pred <- predict(preMsurv_mixmod, newdata = new_data,
+                variance = list(predVar = TRUE),
+                type = "link")
+
+plot_data <- new_data %>% 
+  mutate(surv = boot::inv.logit(as.numeric(pred)),
+         lower = boot::inv.logit(as.numeric(pred) - attr(pred, which = "predVar")),
+         upper = boot::inv.logit(as.numeric(pred) + attr(pred, which = "predVar")))
+
+ggplot(data = plot_data) +
+  geom_ribbon(aes(x = clan_size, ymin = lower, ymax = upper, fill = as.factor(rank_category)),
+              alpha = 0.45) +
+  geom_line(aes(x = clan_size, y = surv, lty = as.factor(rank_category))) +
+  facet_wrap(facets = ~age) +
+  scale_fill_manual(values = c("grey15", "grey85")) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.title = element_blank())
+
+```
+
+Categorical plot (clan size)
+
+```{r}
+
+new_data <- expand.grid(clan_size = as.integer(seq(0, max(Fmod_data$clan_size), length.out = 10)),
+                        rank_category = c("top5", "lower.ranking"),
+                        age = 6:24,
+                        start_clan = "A", year = 0)
+
+pred <- predict(preMsurv_mixmod, newdata = new_data,
+                variance = list(predVar = TRUE),
+                type = "link")
+
+plot_data <- new_data %>% 
+  mutate(surv = boot::inv.logit(as.numeric(pred)),
+         lower = boot::inv.logit(as.numeric(pred) - attr(pred, which = "predVar")),
+         upper = boot::inv.logit(as.numeric(pred) + attr(pred, which = "predVar")))
+
+ggplot(data = plot_data) +
+  geom_ribbon(aes(x = age, ymin = lower, ymax = upper, fill = as.factor(rank_category)),
+              alpha = 0.45) +
+  geom_line(aes(x = age, y = surv, lty = as.factor(rank_category))) +
+  facet_wrap(facets = ~clan_size) +
+  scale_fill_manual(values = c("grey15", "grey85")) +
+  scale_x_continuous(expand = c(0, 0)) +
+  # scale_y_continuous(expand = c(0, 0)) +
+  scale_y_log10() +
+  theme_classic() +
+  theme(legend.title = element_blank())
+
+```
+
+3D plot
+
+```{r}
+
+plot_data <- expand.grid(clan_size = 0:max(Mpremod_data$clan_size),
+                         rank_category = c("top5", "lower.ranking"),
+                         age = seq(0, 60, 1),
+                         start_clan = "A", year = 0) %>% 
+  mutate(surv = as.numeric(predict(preMsurv_mixmod, newdata = ., type = "response")))
+
+ggplot(data = plot_data) +
+  geom_tile(aes(x = age, y = clan_size, fill = surv)) +
+  facet_wrap(facets = ~rank_category) +
+  scale_fill_viridis_c(option = "magma") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic()
+
+```
+
+## M. postdisp survival
+
+```{r}
+
+Mpostmod_data <- model.frame(HyenaPopmod:::survival_M_postdisp_clan_year)
+
+postMsurv_mixmod <- spaMM::fitme(surv ~ poly(age, 2)*post_dispersal_status +
+                                   clan_size + start_clan + (1|start_clan:year),
+                                 data = Mpostmod_data %>% 
+                                   filter(!(post_dispersal_status == "philo" & age > 128) & !(post_dispersal_status == "disp" & age > 158)), family = "binomial", method = "PQL/L")
+
+```
+
+Categorical plot
+
+```{r}
+
+new_data <- expand.grid(clan_size = 0:max(Fmod_data$clan_size),
+                        post_dispersal_status = c("philo", "disp"),
+                        age = seq(24, 144, 24),
+                        start_clan = "A", year = 0) %>% 
+  filter(!(post_dispersal_status == "philo" & age > 170))
+
+pred <- predict(postMsurv_mixmod, newdata = new_data,
+                variance = list(predVar = TRUE),
+                type = "link")
+
+plot_data <- new_data %>% 
+  mutate(surv = boot::inv.logit(as.numeric(pred)),
+         lower = boot::inv.logit(as.numeric(pred) - attr(pred, which = "predVar")),
+         upper = boot::inv.logit(as.numeric(pred) + attr(pred, which = "predVar")))
+
+ggplot(data = plot_data) +
+  geom_ribbon(aes(x = clan_size, ymin = lower, ymax = upper, fill = as.factor(post_dispersal_status)),
+              alpha = 0.45) +
+  geom_line(aes(x = clan_size, y = surv, lty = as.factor(post_dispersal_status))) +
+  facet_wrap(facets = ~age) +
+  scale_fill_manual(values = c("grey15", "grey85")) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.title = element_blank())
+
+```
+
+Categorical plot (clan size)
+
+```{r}
+
+new_data <- expand.grid(clan_size = as.integer(seq(0, max(Fmod_data$clan_size), length.out = 10)),
+                        post_dispersal_status = c("philo", "disp"),
+                        age = 24:240,
+                        start_clan = "A", year = 0) %>% 
+  filter(!(post_dispersal_status == "philo" & age > 128) & !(post_dispersal_status == "disp" & age > 158))
+
+pred <- predict(postMsurv_mixmod, newdata = new_data,
+                variance = list(predVar = TRUE),
+                type = "link")
+
+plot_data <- new_data %>% 
+  mutate(surv = boot::inv.logit(as.numeric(pred)),
+         lower = boot::inv.logit(as.numeric(pred) - attr(pred, which = "predVar")),
+         upper = boot::inv.logit(as.numeric(pred) + attr(pred, which = "predVar")))
+
+ggplot(data = plot_data) +
+  geom_ribbon(aes(x = age, ymin = lower, ymax = upper, fill = as.factor(post_dispersal_status)),
+              alpha = 0.45) +
+  geom_line(aes(x = age, y = surv, lty = as.factor(post_dispersal_status))) +
+  facet_wrap(facets = ~clan_size) +
+  scale_fill_manual(values = c("grey15", "grey85")) +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.title = element_blank())
+
+```
+
+3D plot
+
+```{r}
+
+plot_data <- expand.grid(clan_size = 0:max(Mpostmod_data$clan_size),
+                         post_dispersal_status = c("disp", "philo"),
+                         age = seq(0, 144, 1),
+                         start_clan = "A", year = 2000) %>% 
+  mutate(surv = as.numeric(predict(postMsurv_mixmod, newdata = ., type = "response")))
+
+ggplot(data = plot_data) +
+  geom_tile(aes(x = age, y = clan_size, fill = surv)) +
+  facet_wrap(facets = ~post_dispersal_status) +
+  scale_fill_viridis_c(option = "magma") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic()
+
+```
+
+## Twinning
+
+```{r}
+
+twin_data <- model.frame(HyenaPopmod:::twinning_clan_rank_year)
+
+twin_mixmod <- spaMM::fitme(twin ~ poly(age, 2)*rank_category + 
+                              after1y_effort_all + clan_size*rank_category + start_clan + (1|start_clan:year),
+                            data = twin_data, family = "binomial", method = "PQL/L")
+
+```
+
+Categorical plot
+
+```{r}
+
+new_data <- expand.grid(clan_size = 0:max(Fmod_data$clan_size),
+                        rank_category = c("top5", "lower.ranking"),
+                        age = seq(24, 240, 24),
+                        start_clan = "A", year = 0, after1y_effort_all = 1)
+
+pred <- predict(twin_mixmod, newdata = new_data,
+                variance = list(predVar = TRUE),
+                type = "link")
+
+plot_data <- new_data %>% 
+  mutate(surv = boot::inv.logit(as.numeric(pred)),
+         lower = boot::inv.logit(as.numeric(pred) - attr(pred, which = "predVar")),
+         upper = boot::inv.logit(as.numeric(pred) + attr(pred, which = "predVar")))
+
+ggplot(data = plot_data) +
+  geom_ribbon(aes(x = clan_size, ymin = lower, ymax = upper, fill = as.factor(rank_category)),
+              alpha = 0.45) +
+  geom_line(aes(x = clan_size, y = surv, lty = as.factor(rank_category))) +
+  facet_wrap(facets = ~age) +
+  scale_fill_manual(values = c("grey15", "grey85")) +
+  labs(y = "prob twinning") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.title = element_blank())
+
+```
+
+Categorical plot (alternative view)
+
+```{r}
+
+new_data <- expand.grid(clan_size = c(60, 120),
+                        # clan_size = as.integer(seq(0, max(Fmod_data$clan_size), length.out = 10)),
+                        rank_category = c("top5", "lower.ranking"),
+                        age = 24:240,
+                        start_clan = "A", year = 0, after1y_effort_all = 1)
+
+pred <- predict(twin_mixmod, newdata = new_data,
+                variance = list(predVar = TRUE),
+                type = "link")
+
+plot_data <- new_data %>% 
+  mutate(surv = boot::inv.logit(as.numeric(pred)),
+         lower = boot::inv.logit(as.numeric(pred) - attr(pred, which = "predVar")),
+         upper = boot::inv.logit(as.numeric(pred) + attr(pred, which = "predVar")))
+
+ggplot(data = plot_data) +
+  # geom_ribbon(aes(x = clan_size, ymin = lower, ymax = upper, fill = as.factor(age)),
+  #             alpha = 0.45) +
+  geom_line(aes(x = age, y = surv, lty = as.factor(rank_category))) +
+  facet_wrap(facets = ~clan_size) +
+  # scale_fill_manual(values = c("grey15", "grey85")) +
+  labs(y = "Probability of twin litter", x = "Age (months)",
+       title = "Effect of age on twinning at different clan sizes") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.title = element_blank())
+
+```
+
+3D plot
+
+```{r}
+
+plot_data_twin <- expand.grid(clan_size = 0:max(Mpostmod_data$clan_size),
+                              rank_category = c("top5", "lower.ranking"),
+                              after1y_effort_all = 1,
+                              age = seq(0, 240, 6),
+                              start_clan = "A", year = 2000) %>% 
+  mutate(surv = as.numeric(predict(twin_mixmod, newdata = ., type = "response")))
+
+ggplot(data = plot_data_twin) +
+  geom_tile(aes(x = age, y = clan_size, fill = surv)) +
+  facet_wrap(facets = ~rank_category) +
+  scale_fill_viridis_c(option = "magma", name = "Twinning") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic()
+
+```
+
+## Primiparous repro
+
+```{r}
+
+primi_data <- model.frame(HyenaPopmod:::repro_Fprimi_clan_rank_year)
+
+primirepro_mixmod <- spaMM::fitme(repro ~ months*rank_category +
+                                    rank_category*clan_size + after1y_effort_all + start_clan + (1|start_clan:year),
+                                  data = primi_data, family = "binomial", method = "PQL/L")
+
+```
+
+Categorical plot
+
+```{r}
+
+new_data <- expand.grid(clan_size = 0:max(Fmod_data$clan_size),
+                        rank_category = c("top5", "lower.ranking"),
+                        months = seq(0, 120, 12),
+                        start_clan = "A", year = 0, after1y_effort_all = 1)
+
+pred <- predict(primirepro_mixmod, newdata = new_data,
+                variance = list(predVar = TRUE),
+                type = "link")
+
+plot_data <- new_data %>% 
+  mutate(surv = boot::inv.logit(as.numeric(pred)),
+         lower = boot::inv.logit(as.numeric(pred) - attr(pred, which = "predVar")),
+         upper = boot::inv.logit(as.numeric(pred) + attr(pred, which = "predVar")))
+
+ggplot(data = plot_data) +
+  geom_ribbon(aes(x = clan_size, ymin = lower, ymax = upper, fill = as.factor(rank_category)),
+              alpha = 0.45) +
+  geom_line(aes(x = clan_size, y = surv, lty = as.factor(rank_category))) +
+  facet_wrap(facets = ~months) +
+  scale_fill_manual(values = c("grey15", "grey85")) +
+  labs(y = "prob primiparous repro") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.title = element_blank())
+
+```
+
+Categorical plot (alternative view)
+
+```{r}
+
+new_data <- expand.grid(clan_size = as.integer(seq(0, max(Fmod_data$clan_size), length.out = 10)),
+                        rank_category = c("top5", "lower.ranking"),
+                        months = 0:120,
+                        start_clan = "A", year = 0, after1y_effort_all = 1)
+
+pred <- predict(primirepro_mixmod, newdata = new_data,
+                variance = list(predVar = TRUE),
+                type = "link")
+
+plot_data <- new_data %>% 
+  mutate(surv = boot::inv.logit(as.numeric(pred)),
+         lower = boot::inv.logit(as.numeric(pred) - attr(pred, which = "predVar")),
+         upper = boot::inv.logit(as.numeric(pred) + attr(pred, which = "predVar")))
+
+ggplot(data = plot_data) +
+  # geom_ribbon(aes(x = clan_size, ymin = lower, ymax = upper, fill = as.factor(age)),
+  #             alpha = 0.45) +
+  geom_line(aes(x = months, y = surv, lty = as.factor(rank_category))) +
+  facet_wrap(facets = ~clan_size) +
+  # scale_fill_manual(values = c("grey15", "grey85")) +
+  labs(y = "prob primiparous repro") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic()+
+  theme(legend.title = element_blank())
+
+```
+
+3D plot
+
+```{r}
+
+plot_data_primi <- expand.grid(clan_size = 0:max(primi_data$clan_size),
+                               rank_category = c("top5", "lower.ranking"),
+                               after1y_effort_all = 1,
+                               months = seq(0, 120, 1),
+                               start_clan = "A", year = 2000) %>% 
+  mutate(surv = as.numeric(predict(primirepro_mixmod, newdata = ., type = "response", verbose = c(showpbar = FALSE))))
+
+ggplot(data = plot_data_primi) +
+  geom_tile(aes(x = months, y = clan_size, fill = surv)) +
+  facet_wrap(facets = ~rank_category) +
+  scale_fill_viridis_c(option = "magma", name = 'Primi repor') +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic()
+
+```
+
+## NonPrimiparous repro
+
+```{r}
+
+nonprimi_data <- model.frame(HyenaPopmod:::repro_Fnonprimi_clan_rank_year)
+
+nonprimirepro_mixmod <- spaMM::fitme(repro ~ months*rank_category + months*age + 
+                                       clan_size*rank_category + after1y_effort_all + start_clan + (1|start_clan:year),
+                                     data = nonprimi_data, family = "binomial", method = "PQL/L")
+
+```
+
+Categorical plot
+
+```{r}
+
+new_data <- expand.grid(clan_size = 0:max(Fmod_data$clan_size),
+                        rank_category = c("top5", "lower.ranking"),
+                        months = seq(0, 120, 12),
+                        age = 120,
+                        start_clan = "A", year = 0, after1y_effort_all = 1)
+
+pred <- predict(nonprimirepro_mixmod, newdata = new_data,
+                variance = list(predVar = TRUE),
+                type = "link", verbose = c(showpbar = FALSE))
+
+plot_data <- new_data %>% 
+  mutate(surv = boot::inv.logit(as.numeric(pred)),
+         lower = boot::inv.logit(as.numeric(pred) - attr(pred, which = "predVar")),
+         upper = boot::inv.logit(as.numeric(pred) + attr(pred, which = "predVar")))
+
+ggplot(data = plot_data) +
+  geom_ribbon(aes(x = clan_size, ymin = lower, ymax = upper, fill = as.factor(rank_category)),
+              alpha = 0.45) +
+  geom_line(aes(x = clan_size, y = surv, lty = as.factor(rank_category))) +
+  facet_wrap(facets = ~months) +
+  scale_fill_manual(values = c("grey15", "grey85")) +
+  labs(y = "prob nonprimiparous repro") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.title = element_blank())
+
+```
+
+Categorical plot (alternative view)
+
+```{r}
+
+new_data <- expand.grid(clan_size = c(50, 130),
+                        # clan_size = as.integer(seq(0, max(Fmod_data$clan_size), length.out = 10)),
+                        rank_category = c("top5", "lower.ranking"),
+                        months = seq(0, 120, 24),
+                        age = 24:240,
+                        start_clan = "A", year = 0, after1y_effort_all = 1)
+
+pred <- predict(nonprimirepro_mixmod, newdata = new_data,
+                variance = list(predVar = TRUE),
+                type = "link")
+
+plot_data <- new_data %>% 
+  mutate(surv = boot::inv.logit(as.numeric(pred)),
+         lower = boot::inv.logit(as.numeric(pred) - attr(pred, which = "predVar")),
+         upper = boot::inv.logit(as.numeric(pred) + attr(pred, which = "predVar")))
+
+ggplot(data = plot_data) +
+  # geom_ribbon(aes(x = clan_size, ymin = lower, ymax = upper, fill = as.factor(age)),
+  #             alpha = 0.45) +
+  geom_line(aes(x = age, y = surv, lty = as.factor(rank_category), colour = as.factor(months))) +
+  facet_wrap(facets = ~clan_size) +
+  # scale_fill_manual(values = c("grey15", "grey85")) +
+  labs(y = "prob primiparous repro") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic() +
+  theme(legend.title = element_blank())
+
+```
+
+3D plot
+
+```{r}
+
+plot_data_nonprimi <- expand.grid(clan_size = 0:max(nonprimi_data$clan_size),
+                                  rank_category = c("top5", "lower.ranking"),
+                                  after1y_effort_all = 1,
+                                  age = 120,
+                                  months = seq(0, 120, 1),
+                                  start_clan = "A", year = 2000) %>% 
+  mutate(surv = as.numeric(predict(nonprimirepro_mixmod, newdata = ., type = "response")))
+
+ggplot(data = plot_data_nonprimi) +
+  geom_tile(aes(x = months, y = clan_size, fill = surv)) +
+  facet_wrap(facets = ~rank_category) +
+  scale_fill_viridis_c(option = "magma", limits = c(0, 1), name = "Nonprimi repro") +
+  scale_x_continuous(expand = c(0, 0)) +
+  scale_y_continuous(expand = c(0, 0)) +
+  theme_classic()
+
+```
+
+## Male secondary disp
+
+```{r}
+
+single_prob <- data.frame(is_philo = c(TRUE, FALSE)) %>% 
+  mutate(prob = predict(HyenaPopmod:::disp_M, newdata = ., type = "response"))
+
+plot_data <- data.frame(months = 0:240) %>% 
+  mutate(philo = (1 - single_prob$prob[single_prob$is_philo])^months,
+         non_philo = (1 - single_prob$prob[!single_prob$is_philo])^months) %>% 
+  tidyr::pivot_longer(cols = philo:non_philo)
+
+ggplot(data = plot_data) +
+  geom_line(aes(x = months, y = value, lty = name)) +
+  scale_y_continuous(limits = c(0, 1)) +
+  theme_classic() +
+  labs(x = "Months since arrival", y = "Probability that individual has stayed")
+
+```

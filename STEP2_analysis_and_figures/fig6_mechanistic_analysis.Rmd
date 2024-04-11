@@ -1,0 +1,635 @@
+---
+title: "Mechanistic_analysis"
+author: "Liam"
+date: '2022-09-02'
+output: html_document
+---
+
+## Prepare
+
+Load required packages
+
+```{r pkg}
+library(ggplot2)
+library(dplyr)
+library(here)
+library(lay)
+library(lubridate)
+library(doSNOW)
+library(patchwork)
+library(spaMM)
+library(DHARMa)
+library(ggtext)
+```
+
+```{r}
+start_year  <- 1997
+end_year    <- 2021
+```
+
+Load environmental data
+
+```{r}
+## GENERATED IN STEP0_prepare_data/mechanistic_data.Rmd
+mechanistic_data <- read.csv(here::here("./analysis/data/mechanistic_model_data.csv"))
+```
+
+Extract K data
+
+```{r k_data_clan}
+if (file.exists(here::here("./analysis/data/Kplot_clan_data.RDS"))) {
+  Kplot_data <- readRDS(here::here("./analysis/data/Kplot_clan_data.RDS"))
+} else {
+  
+  ## EXTRACT ESTIMATED K
+  years <- start_year:end_year
+  
+  pb_yr <- progress::progress_bar$new(total = length(years))
+  
+  Kplot_data <- purrr::map_df(.x = years,
+                              .f = function(year){
+                                
+                                pb_yr$tick()
+                                
+                                txt_files <- list.files(here(paste0("./analysis/STEP1_estimate_K/", year)),
+                                                        pattern = ".txt", full.names = TRUE)
+                                
+                                allsims <- purrr::map_df(.x = txt_files,
+                                                         .f = function(filepath){
+                                                           
+                                                           readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) %>%
+                                                             dplyr::mutate(sim = stringr::str_extract(filepath, "(?<=_)[0-9]+(?=.txt)"))
+                                                           
+                                                         })
+                                
+                                #Remove deaths, mothers, father
+                                allsims_sub <- allsims %>% 
+                                  select(-contains("dead"), -contains("father"), -contains("mother")) %>% 
+                                  tidyr::pivot_longer(cols = A_cubfem:T_dispmale) %>% 
+                                  tidyr::separate(col = name, sep = "_", into = c("clan", "group")) %>% 
+                                  group_by(clan, date, sim) %>% 
+                                  summarise(pop_size = first(pop_size),
+                                            clan_size = sum(value), .groups = "drop") %>% 
+                                  tidyr::pivot_wider(names_from = clan, values_from = clan_size)
+                                
+                                estK <- allsims_sub %>% 
+                                  dplyr::group_by(.data$sim) %>% 
+                                  dplyr::mutate(start_pop = first(pop_size)) %>%
+                                  dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>% 
+                                  dplyr::summarise(across(.cols = pop_size:T, .fns = function(N) replace(median(N, na.rm = TRUE),
+                                                                                                         is.na(median(N, na.rm = TRUE)), 0)),
+                                                   start_size = first(start_pop),
+                                                   year = year)
+                                
+                                return(estK)
+                                
+                              })
+  
+  saveRDS(Kplot_data, file = here("./analysis/data/Kplot_clan_data.RDS"))
+}
+
+```
+
+```{r}
+clanK <- Kplot_data %>% 
+  tidyr::pivot_longer(cols = pop_size:T, names_to = "clan") %>% 
+  group_by(year, clan) %>% 
+  dplyr::summarise(globalK = median(.data$value),
+                   lower = min(.data$value),
+                   upper = max(.data$value), .groups = "drop") %>% 
+  filter(clan != "pop_size") |> 
+  ## Force values to integer for analyses w/ Poisson or Negbin
+  mutate(across(globalK:upper, as.integer))
+```
+
+Combined environmental data with K estimates
+
+```{r}
+mod_data_alldisease_consv <- clanK |> 
+  left_join(mechanistic_data, by = c("year", "clan")) |> 
+  filter(!is.na(avgprey))
+```
+
+Plot data to investigate
+
+```{r}
+ggplot() +
+  geom_point(data = mod_data_alldisease_consv, aes(x = avgprey, y = globalK)) +
+  geom_smooth(data = mod_data_alldisease_consv, aes(x = avgprey, y = globalK), method = "lm", se = FALSE) +
+  labs(title = "Prey category") +
+  theme_classic()
+```
+
+Join with other data (determine avg density across all clans in a year)
+
+```{r}
+ggplot() +
+  geom_point(data = mod_data_alldisease_consv, aes(x = lion_density, y = globalK)) +
+  geom_smooth(data = mod_data_alldisease_consv, aes(x = lion_density, y = globalK), method = "lm", se = FALSE) +
+  theme_classic()
+```
+```{r}
+ggplot() +
+  geom_point(data = mod_data_alldisease_consv, aes(x = total_disease_percap, y = globalK)) +
+  geom_smooth(data = mod_data_alldisease_consv, aes(x = total_disease_percap, y = globalK), method = "lm", se = FALSE) +
+  theme_classic()
+```
+
+### Model (categorical prey)
+
+#### Negbin
+
+Some issues with temporal auto-correlation. Fit with AR1.
+
+AR1 mod
+
+```{r}
+mod2 <- fitme(globalK ~ lion_density_scale + avgprey_scale + total_disease_percap_scale + roaduse + grazing + clan + AR1(1|year),
+              data = mod_data_alldisease_consv,
+              family = spaMM::negbin2(link = "log"))
+```
+
+Make sure this didn't mess up any of the other assumptions.
+
+```{r}
+simresid_mod2 <- simulateResiduals(mod2, n = 1000, seed = 124)
+
+testUniformity(simresid_mod2)
+```
+
+```{r}
+testQuantiles(simresid_mod2)
+```
+
+```{r}
+testQuantiles(simresid_mod2, predictor = mod_data_alldisease_consv$avgprey_scale)
+```
+
+Looks like a non-linear effect of prey might be more appropriate.
+
+```{r}
+testQuantiles(simresid_mod2, predictor = mod_data_alldisease_consv$lion_density_scale)
+```
+
+```{r}
+testQuantiles(simresid_mod2, predictor = mod_data_alldisease_consv$total_disease_percap_scale)
+```
+
+```{r}
+testDispersion(simresid_mod2)
+```
+
+#### Gaussian
+
+Try Gaussian. This requires us to remove year random intercept to get convergence, although in mod2 it explains very little variance so not a major issue.
+
+```{r}
+mod3 <- fitme(globalK ~ lion_density_scale + avgprey_scale + total_disease_percap_scale + roaduse + grazing + clan + AR1(1|year),
+              data = mod_data_alldisease_consv,
+              family = gaussian(link = "identity"))
+```
+
+Using Gaussian identical. This would be easier to describe (and comparable to models of temporal trends).
+
+```{r}
+AIC(mod2, verbose = TRUE)
+AIC(mod3, verbose = TRUE)
+```
+
+```{r}
+simresid_mod3 <- simulateResiduals(mod3, n = 1000, seed = 124)
+
+testUniformity(simresid_mod3)
+```
+
+```{r}
+testQuantiles(simresid_mod3)
+```
+
+```{r}
+testQuantiles(simresid_mod3, predictor = mod_data_alldisease_consv$avgprey_scale)
+```
+
+Looks like a non-linear effect of prey might be more appropriate.
+
+```{r}
+testQuantiles(simresid_mod3, predictor = mod_data_alldisease_consv$lion_density_scale)
+```
+
+```{r}
+testQuantiles(simresid_mod3, predictor = mod_data_alldisease_consv$total_disease_percap_scale)
+```
+
+```{r}
+testDispersion(simresid_mod3)
+```
+
+#### Significance
+
+##### Gaussian
+
+Compare to null (significant!)
+
+```{r}
+## NOTE: Need to specify intercept for this to work otherwise LRT fails
+null_mod <- fitme(globalK ~ 1 + AR1(1|year),
+                  data = mod_data_alldisease_consv,
+                  family = gaussian(link = "identity"))
+global_LRT_mod3 <- LRT(mod3, null_mod, boot.repl = 999, nb_cores = 10, seed = 124)
+data.frame(basic = global_LRT_mod3$basicLRT$p_value, bartlett = global_LRT_mod3$BartBootLRT$p_value, bootstrap = global_LRT_mod3$rawBootLRT$p_value)
+```
+
+```{r}
+summary(mod3)
+```
+
+```{r}
+nolion <- fitme(globalK ~ 1 + avgprey_scale + total_disease_percap_scale + roaduse + grazing + clan + AR1(1|year),
+                data = mod_data_alldisease_consv,
+                family = gaussian(link = "identity"))
+noprey <- fitme(globalK ~ lion_density_scale + total_disease_percap_scale + roaduse + grazing + clan + AR1(1|year),
+                data = mod_data_alldisease_consv,
+                family = gaussian(link = "identity"))
+nodisease <- fitme(globalK ~ lion_density_scale + avgprey_scale + roaduse + grazing + clan + AR1(1|year),
+                   data = mod_data_alldisease_consv,
+                   family = gaussian(link = "identity"))
+noroaduse <- fitme(globalK ~ lion_density_scale + avgprey_scale + total_disease_percap_scale + grazing + clan + AR1(1|year),
+                   data = mod_data_alldisease_consv,
+                   family = gaussian(link = "identity"))
+nograzingban <- fitme(globalK ~ lion_density_scale + avgprey_scale + roaduse + total_disease_percap_scale + clan + AR1(1|year),
+                      data = mod_data_alldisease_consv,
+                      family = gaussian(link = "identity"))
+```
+
+```{r}
+lionLRT_mod3 <- LRT(mod3, nolion, boot.repl = 999, nb_cores = 10, seed = 124)
+data.frame(basic = lionLRT_mod3$basicLRT$p_value, bartlett = lionLRT_mod3$BartBootLRT$p_value, bootstrap = lionLRT_mod3$rawBootLRT$p_value)
+```
+
+```{r}
+lionCI_mod3 <- confint(mod3, parm = "lion_density_scale", verbose = FALSE, boot_args = list(nsim = 999, nb_cores = 10, seed = 124))
+lionCI_mod3
+```
+
+```{r}
+preyLRT_mod3<- LRT(mod3, noprey, boot.repl = 999, nb_cores = 10, seed = 124)
+data.frame(basic = preyLRT_mod3$basicLRT$p_value, bartlett = preyLRT_mod3$BartBootLRT$p_value, bootstrap = preyLRT_mod3$rawBootLRT$p_value)
+```
+
+```{r}
+preyCI_mod3 <- confint(mod3, parm = "avgprey_scale", verbose = FALSE, boot_args = list(nsim = 999, nb_cores = 10, seed = 124))
+preyCI_mod3
+```
+
+```{r}
+diseaseLRT_mod3 <- LRT(mod3, nodisease, boot.repl = 999, nb_cores = 10, seed = 124)
+data.frame(basic = diseaseLRT_mod3$basicLRT$p_value, bartlett = diseaseLRT_mod3$BartBootLRT$p_value, bootstrap = diseaseLRT_mod3$rawBootLRT$p_value)
+```
+
+```{r}
+diseaseCI_mod3  <- confint(mod3, parm = "total_disease_percap_scale", verbose = FALSE, boot_args = list(nsim = 999, nb_cores = 10, seed = 124))
+diseaseCI_mod3 
+```
+
+```{r}
+roaduseLRT_mod3 <- LRT(mod3, noroaduse, boot.repl = 999, nb_cores = 10, seed = 124)
+data.frame(basic = roaduseLRT_mod3$basicLRT$p_value, bartlett = roaduseLRT_mod3$BartBootLRT$p_value, bootstrap = roaduseLRT_mod3$rawBootLRT$p_value)
+```
+
+```{r}
+roaduseCI_mod3 <- confint(mod3, parm = "roaduseinactive", verbose = FALSE, boot_args = list(nsim = 999, nb_cores = 10, seed = 124))
+roaduseCI_mod3
+```
+
+```{r}
+grazingbanLRT <- LRT(mod3, nograzingban, boot.repl = 999, nb_cores = 10, seed = 124)
+data.frame(basic = grazingbanLRT$basicLRT$p_value, bartlett = grazingbanLRT$BartBootLRT$p_value, bootstrap = grazingbanLRT$rawBootLRT$p_value)
+```
+
+```{r}
+grazingbanCI <- confint(mod3, parm = "grazingpresent", verbose = FALSE, boot_args = list(nsim = 999, nb_cores = 10, seed = 124))
+grazingbanCI
+```
+### Plots
+
+#### Conditional predictions for disease
+
+```{r}
+
+plot_data_cond <- mod_data_alldisease_consv |> 
+  select(lion_density_scale, avgprey_scale, roaduse, grazing, clan, year) |> 
+  mutate(total_disease_percap_scale = list(seq(min(mod_data_alldisease_consv$total_disease_percap_scale),
+                                               max(mod_data_alldisease_consv$total_disease_percap_scale),
+                                               length.out = 50))) |> 
+  tidyr::unnest(total_disease_percap_scale)
+
+plot_data_cond$pred <- as.numeric(predict(mod3, newdata = as_tibble(plot_data_cond), type = "response"))
+
+plot_data_cond <- plot_data_cond |> 
+  ## Unscale values
+  mutate(total_disease_percap = total_disease_percap_scale*sd(mod_data_alldisease_consv$total_disease_percap) + mean(mod_data_alldisease_consv$total_disease_percap)) |> 
+  group_by(total_disease_percap) |> 
+  summarise(mean_Ktc = mean(pred),
+            SE_Ktc = sd(pred)/sqrt(n()),
+            lower = mean_Ktc - (qnorm(0.975)*SE_Ktc),
+            upper = mean_Ktc + (qnorm(0.975)*SE_Ktc))
+
+plot_disease_cond <- ggplot() +
+  geom_ribbon(data = plot_data_cond, aes(x = total_disease_percap, ymin = lower, ymax = upper),
+              fill = "grey75", alpha = 0.6) +
+  geom_line(data = plot_data_cond, aes(x = total_disease_percap, y = mean_Ktc)) +
+  geom_point(data = mod_data_alldisease_consv, aes(x = total_disease_percap, y = globalK),
+             alpha = 0.5, position = position_jitter(width = 0.002, height = 0, seed = 124),
+             size = 2, shape = 21, fill = "grey10", colour = "white") +
+  scale_y_continuous(limits = c(-5, 175),
+                     breaks = seq(0, 175, 25), expand = c(0, 0)) +
+  labs(x = "Proportion of the clan observed\nwith clinical signs of infection",
+       y = "Clan carrying capacity") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title = element_markdown(colour = "black", size = 15),
+        legend.position = c(0.425, 0.4),
+        legend.title = element_blank(),
+        legend.background = element_blank(),
+        legend.text = element_text(size = 8))
+
+```
+
+#### Marginal predictions for disease
+
+```{r}
+
+plot_data_marginal <- data.frame(lion_density_scale = mean(mod_data_alldisease_consv$lion_density_scale),
+                                 total_disease_percap_scale = seq(min(mod_data_alldisease_consv$total_disease_percap_scale),
+                                                                  max(mod_data_alldisease_consv$total_disease_percap_scale),
+                                                                  length.out = 50),
+                                 roaduse = "active",
+                                 grazing = "abscent",
+                                 clan = "L",
+                                 avgprey_scale = mean(mod_data_alldisease_consv$avgprey_scale),
+                                 year = "1998")
+
+preds <- predict(mod3, newdata = as_tibble(plot_data_marginal), type = "response", re.form = NA, intervals = "predVar")
+plot_data_marginal$pred <- as.numeric(preds)
+plot_data_marginal <- plot_data_marginal |> bind_cols(attr(preds, "interval"))
+
+plot_data_marginal <- plot_data_marginal |>
+  ## Unscale values
+  mutate(total_disease_percap = total_disease_percap_scale*sd(mod_data_alldisease_consv$total_disease_percap) + mean(mod_data_alldisease_consv$total_disease_percap))
+
+plot_disease_marg <- ggplot() +
+  geom_ribbon(data = plot_data_marginal, aes(x = total_disease_percap, ymin = predVar_0.025, ymax = predVar_0.975),
+              fill = "grey75", alpha = 0.6) +
+  geom_line(data = plot_data_marginal, aes(x = total_disease_percap, y = pred)) +
+  geom_point(data = mod_data_alldisease_consv, aes(x = total_disease_percap, y = globalK),
+             alpha = 0.75, position = position_jitter(width = 0.002, height = 0, seed = 124),
+             size = 2, shape = 21, fill = "grey10", colour = "white") +
+  scale_y_continuous(limits = c(-5, 175),
+                     breaks = seq(0, 175, 25), expand = c(0, 0)) +
+  labs(x = "Proportion of the clan observed\nwith clinical signs of infection",
+       y = "Clan carrying capacity") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title = element_text(colour = "black", size = 15),
+        legend.position = c(0.425, 0.4),
+        legend.title = element_blank(),
+        legend.background = element_blank(),
+        legend.text = element_text(size = 8))
+
+```
+
+#### Conditional predictions for prey
+
+```{r}
+
+plot_data_cond <- mod_data_alldisease_consv |> 
+  select(lion_density_scale, total_disease_percap_scale, roaduse, grazing, clan, year) |> 
+  mutate(avgprey_scale = list(seq(min(mod_data_alldisease_consv$avgprey_scale),
+                                  max(mod_data_alldisease_consv$avgprey_scale),
+                                  length.out = 50))) |> 
+  tidyr::unnest(avgprey_scale)
+
+plot_data_cond$pred <- as.numeric(predict(mod3, newdata = as_tibble(plot_data_cond), type = "response"))
+
+plot_data_cond <- plot_data_cond |>
+  ## Unscale values
+  mutate(avgprey = avgprey_scale*sd(mod_data_alldisease_consv$avgprey) + mean(mod_data_alldisease_consv$avgprey)) |> 
+  group_by(avgprey) |> 
+  summarise(mean_Ktc = mean(pred),
+            SE_Ktc = sd(pred)/sqrt(n()),
+            lower = mean_Ktc - (qnorm(0.975)*SE_Ktc),
+            upper = mean_Ktc + (qnorm(0.975)*SE_Ktc))
+
+plot_avgprey_cond <- ggplot() +
+  geom_ribbon(data = plot_data_cond, aes(x = avgprey, ymin = lower, ymax = upper),
+              fill = "grey75", alpha = 0.6) +
+  geom_line(data = plot_data_cond, aes(x = avgprey, y = mean_Ktc)) +
+  geom_point(data = mod_data_alldisease_consv, aes(x = avgprey, y = globalK),
+             alpha = 0.75, position = position_jitter(width = 0.002, height = 0, seed = 124),
+             size = 2, shape = 21, fill = "grey10", colour = "white") +
+  scale_y_continuous(limits = c(-5, 175),
+                     breaks = seq(0, 175, 25), expand = c(0, 0)) +
+  labs(x = "Average prey abundance ranking",
+       y = "Clan carrying capacity") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title = element_text(colour = "black", size = 15),
+        legend.position = c(0.425, 0.4),
+        legend.title = element_blank(),
+        legend.background = element_blank(),
+        legend.text = element_text(size = 8))
+
+```
+
+#### Marginal predictions for prey
+
+```{r}
+
+plot_data_marginal <- data.frame(lion_density_scale = mean(mod_data_alldisease_consv$lion_density_scale),
+                                 total_disease_percap_scale = mean(mod_data_alldisease_consv$total_disease_percap_scale),
+                                 roaduse = "active",
+                                 grazing = "abscent",
+                                 clan = "L",
+                                 avgprey_scale = seq(min(mod_data_alldisease_consv$avgprey_scale),
+                                                     max(mod_data_alldisease_consv$avgprey_scale),
+                                                     length.out = 50),
+                                 year = "1998")
+
+preds <- predict(mod3, newdata = as_tibble(plot_data_marginal), type = "response", re.form = NA, intervals = "predVar")
+plot_data_marginal$pred <- as.numeric(preds)
+plot_data_marginal <- plot_data_marginal |> bind_cols(attr(preds, "interval"))
+
+plot_data_marginal <- plot_data_marginal |>
+  ## Unscale values
+  mutate(avgprey = avgprey_scale*sd(mod_data_alldisease_consv$avgprey) + mean(mod_data_alldisease_consv$avgprey))
+
+plot_avgprey_marg <- ggplot() +
+  geom_ribbon(data = plot_data_marginal, aes(x = avgprey, ymin = predVar_0.025, ymax = predVar_0.975),
+              fill = "grey75", alpha = 0.6) +
+  geom_line(data = plot_data_marginal, aes(x = avgprey, y = pred)) +
+  geom_point(data = mod_data_alldisease_consv, aes(x = avgprey, y = globalK),
+             alpha = 0.75, position = position_jitter(width = 0.002, height = 0, seed = 124),
+             size = 2, shape = 21, fill = "grey10", colour = "white") +
+  scale_y_continuous(limits = c(-5, 175),
+                     breaks = seq(0, 175, 25), expand = c(0, 0)) +
+  labs(x = "Average prey abundance ranking",
+       y = "Clan carrying capacity") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title = element_text(colour = "black", size = 15),
+        legend.position = c(0.425, 0.4),
+        legend.title = element_blank(),
+        legend.background = element_blank(),
+        legend.text = element_text(size = 8))
+
+```
+
+#### Marginal predictions for lion
+
+```{r}
+
+plot_data_marginal <- data.frame(lion_density_scale = seq(min(mod_data_alldisease_consv$lion_density_scale),
+                                                          max(mod_data_alldisease_consv$lion_density_scale),
+                                                          length.out = 50),
+                                 total_disease_percap_scale = mean(mod_data_alldisease_consv$total_disease_percap_scale),
+                                 roaduse = "active",
+                                 grazing = "abscent",
+                                 clan = "L",
+                                 avgprey_scale = mean(mod_data_alldisease_consv$avgprey_scale),
+                                 year = "1998")
+
+preds <- predict(mod3, newdata = as_tibble(plot_data_marginal), type = "response", re.form = NA, intervals = "predVar")
+plot_data_marginal$pred <- as.numeric(preds)
+plot_data_marginal <- plot_data_marginal |> bind_cols(attr(preds, "interval"))
+
+plot_data_marginal <- plot_data_marginal |>
+  ## Unscale values
+  mutate(lion_density = lion_density_scale*sd(mod_data_alldisease_consv$lion_density) + mean(mod_data_alldisease_consv$lion_density))
+
+plot_lion_marg <- ggplot() +
+  geom_ribbon(data = plot_data_marginal, aes(x = lion_density, ymin = predVar_0.025, ymax = predVar_0.975),
+              fill = "grey75", alpha = 0.6) +
+  geom_line(data = plot_data_marginal, aes(x = lion_density, y = pred)) +
+  geom_point(data = mod_data_alldisease_consv, aes(x = lion_density, y = globalK),
+             alpha = 0.75, position = position_jitter(width = 0.002, height = 0, seed = 124),
+             size = 2, shape = 21, fill = "grey10", colour = "white") +
+  scale_y_continuous(limits = c(-5, 175),
+                     breaks = seq(0, 175, 25), expand = c(0, 0)) +
+  labs(x = "Lion density (number sighted/km<sup>2</sup>)",
+       y = "Clan carrying capacity") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title.x = element_markdown(colour = "black", size = 15),
+        axis.title.y = element_text(colour = "black", size = 15),
+        legend.position = c(0.425, 0.4),
+        legend.title = element_blank(),
+        legend.background = element_blank(),
+        legend.text = element_text(size = 8))
+
+plot_lion_marg
+
+```
+
+### Final plot
+
+```{r}
+plot_avgprey_marg + plot_disease_marg + plot_lion_marg + patchwork::plot_layout(nrow = 1) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
+
+ggsave(filename = here::here("analysis/plots/mechanistic_results_new.png"), dpi = 600,
+       width = 15, height = 5)
+```
+
+### Supplementary fig
+
+#### Marginal predictions for road use
+
+```{r}
+
+plot_data_marginal <- data.frame(lion_density_scale = mean(mod_data_alldisease_consv$lion_density_scale),
+                                 total_disease_percap_scale = mean(mod_data_alldisease_consv$total_disease_percap_scale),
+                                 roaduse = c("active", "inactive"),
+                                 grazing = "abscent",
+                                 clan = "L",
+                                 avgprey_scale = mean(mod_data_alldisease_consv$avgprey_scale),
+                                 year = "1998")
+
+preds <- predict(mod3, newdata = as_tibble(plot_data_marginal), type = "response", re.form = NA, intervals = "predVar")
+plot_data_marginal$pred <- as.numeric(preds)
+plot_data_marginal <- plot_data_marginal |> bind_cols(attr(preds, "interval"))
+
+plot_road_marg <- ggplot() +
+  geom_point(data = mod_data_alldisease_consv, aes(x = roaduse, y = globalK),
+             alpha = 0.75, position = position_jitter(width = 0.002, height = 0, seed = 124),
+             size = 1.5, shape = 21, fill = "grey10", colour = "white") +
+  geom_violin(data = mod_data_alldisease_consv, aes(x = roaduse, y = globalK),
+              alpha = 0.5, fill = "grey50") +
+  geom_errorbar(data = plot_data_marginal, aes(x = roaduse, ymin = predVar_0.025, ymax = predVar_0.975), width = 0.1) +
+  geom_point(data = plot_data_marginal, aes(x = roaduse, y = pred), size = 3) +
+  scale_y_continuous(limits = c(-5, 175),
+                     breaks = seq(0, 175, 25), expand = c(0, 0)) +
+  scale_x_discrete(labels = c("Road use restrictions \n active", "Road use restrictions \n inactive")) +
+  labs(x = "",
+       y = "Clan carrying capacity") +
+  theme_classic() +
+  theme(axis.text.y = element_text(colour = "black", size = 12),
+        axis.text.x = element_text(colour = "black", size = 13),
+        axis.title = element_text(colour = "black", size = 15),
+        legend.position = c(0.425, 0.4),
+        legend.title = element_blank(),
+        legend.background = element_blank(),
+        legend.text = element_text(size = 8))
+
+plot_road_marg
+
+```
+
+#### Marginal predictions for grazing
+
+```{r}
+
+plot_data_marginal <- data.frame(lion_density_scale = mean(mod_data_alldisease_consv$lion_density_scale),
+                                 total_disease_percap_scale = mean(mod_data_alldisease_consv$total_disease_percap_scale),
+                                 roaduse = "active",
+                                 grazing = c("abscent", "present"),
+                                 clan = "L",
+                                 avgprey_scale = mean(mod_data_alldisease_consv$avgprey_scale),
+                                 year = "1998")
+
+preds <- predict(mod3, newdata = as_tibble(plot_data_marginal), type = "response", re.form = NA, intervals = "predVar")
+plot_data_marginal$pred <- as.numeric(preds)
+plot_data_marginal <- plot_data_marginal |> bind_cols(attr(preds, "interval"))
+
+plot_grazing_marg <- ggplot() +
+  geom_point(data = mod_data_alldisease_consv, aes(x = grazing, y = globalK),
+             alpha = 0.75, position = position_jitter(width = 0.002, height = 0, seed = 124),
+             size = 1.5, shape = 21, fill = "grey10", colour = "white") +
+  geom_violin(data = mod_data_alldisease_consv, aes(x = grazing, y = globalK),
+              alpha = 0.5, fill = "grey50") +
+  geom_errorbar(data = plot_data_marginal, aes(x = grazing, ymin = predVar_0.025, ymax = predVar_0.975), width = 0.1) +
+  geom_point(data = plot_data_marginal, aes(x = grazing, y = pred), size = 3) +
+  scale_y_continuous(limits = c(-5, 175),
+                     breaks = seq(0, 175, 25), expand = c(0, 0)) +
+  scale_x_discrete(labels = c("Grazing restrictions \n active", "Grazing restrictions \n inactive")) +
+  labs(x = "",
+       y = "Clan carrying capacity") +
+  theme_classic() +
+  theme(axis.text.y = element_text(colour = "black", size = 12),
+        axis.text.x = element_text(colour = "black", size = 13),
+        axis.title = element_text(colour = "black", size = 15),
+        legend.position = c(0.425, 0.4),
+        legend.title = element_blank(),
+        legend.background = element_blank(),
+        legend.text = element_text(size = 8))
+
+plot_grazing_marg
+
+```
+
+#### Save output
+
+```{r}
+plot_avgprey_marg + plot_disease_marg + plot_lion_marg + plot_road_marg + plot_grazing_marg + patchwork::plot_layout(nrow = 2, ncol = 3) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
+
+ggsave(filename = here::here("analysis/plots/supp_mechanistic_results_new.png"), dpi = 600,
+       width = 15, height = 10)
+```

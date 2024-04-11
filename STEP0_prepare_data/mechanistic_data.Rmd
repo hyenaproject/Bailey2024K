@@ -1,0 +1,209 @@
+---
+title: "extract_mechanistic_data"
+output: html_document
+date: "2024-04-08"
+---
+
+## Prepare
+
+Load required packages
+
+```{r pkg}
+library(ggplot2)
+library(hyenaR)
+library(dplyr)
+library(here)
+library(lay)
+library(lubridate)
+library(doSNOW)
+library(patchwork)
+library(spaMM)
+library(DHARMa)
+library(ggtext)
+```
+
+Define which simulation type we're using
+
+```{r}
+db.path     <- here("../hyena_data/Fisidata_2023_03_07.sqlite")
+start_year  <- 1997
+end_year    <- 2021
+```
+
+Load database
+
+```{r}
+load_package_database.full(db.path)
+```
+
+
+## Analysis for whole population
+
+### Prey data
+
+```{r}
+prey_plot_datapop <- extract_database_table("sightings") %>% 
+  filter(!is.na(prey) & clanID %in% find_clan_name.all(main.clans = TRUE)) %>% 
+  mutate(year = lubridate::year(date_time)) %>% 
+  select(year, prey, clan = clanID) %>% 
+  group_by(year, clan) %>% 
+  summarise(avgprey = mean(prey),
+            se = sd(prey)/sqrt(n()),
+            .groups = "drop") |> 
+  filter(year >= start_year & year <= end_year)
+```
+
+```{r}
+ggplot(data = prey_plot_datapop) +
+  geom_ribbon(aes(x = year, ymin = avgprey - se, ymax = avgprey + se),
+              alpha = 0.5) +
+  geom_line(aes(x = year, y = avgprey)) +
+  labs(title = "Prey categories") +
+  theme_classic() +
+  facet_wrap(facets = ~clan)
+```
+
+### Lion data
+
+Here we need to have the clan homeranges (pre and post 2012) so that we can determine lion density.
+
+```{r, message=FALSE}
+homeranges <- tibble(clan = find_clan_name.all(),
+                     merge_val = 1) %>% 
+  left_join(tibble(from = c(paste0(start_year, "-01-01"),
+                            "2012-01-01"),
+                   to = c("2011-12-31",
+                          paste0(end_year, "-12-31")),
+                   merge_val = 1), by = "merge_val", multiple = "all") %>% 
+  mutate(homerangepoly = hyenaR::fetch_clan_homerange(clan = clan, lifestage = "adult", sex = "female",
+                                                      from = from, to = to, hr.args = list(levels = 0.95)))
+
+plot_homerange_data <- homeranges %>% 
+  sf::st_as_sf()
+
+ggplot() +
+  geom_sf(data = hyenaR::sf_hyenaR$rim_polygon) +
+  geom_sf(data = plot_homerange_data, aes(fill = clan),
+          alpha = 0.5) +
+  facet_wrap(facets = ~from) +
+  theme_void()
+```
+
+Extract lion data
+
+```{r}
+all_lions <- extract_database_table("carnivores") %>% 
+  filter(species == "li" & !is.na(longitude) & !is.na(latitude)) %>% 
+  #When there are >1 record with same date_time & lat-long just take the first (these are duplicates which are already recorded in group size)
+  group_by(date_time, latitude, longitude) %>% 
+  slice(1) %>% 
+  ungroup() %>% 
+  mutate(year = year(date_time)) %>% 
+  sf::st_as_sf(coords = c("longitude", "latitude")) %>% 
+  select(year, groupsize) %>% 
+  sf::st_set_crs("EPSG:4326") %>% 
+  sf::st_transform(sf::st_crs(plot_homerange_data))
+```
+
+Join with homerange depending on overlap
+
+```{r}
+lion_homerange_overlap <- plot_homerange_data %>% 
+  sf::st_join(all_lions)
+```
+
+For each clan/year determine the number of lions/m2
+
+```{r}
+lion_density <- lion_homerange_overlap %>% 
+  group_by(clan, year) %>% 
+  summarise(total_lions = sum(groupsize),
+            total_sightings = n(),
+            .groups = "drop") %>% 
+  #Area in km2 (returns m2 by default)
+  mutate(homerangearea = as.numeric(sf::st_area(.))*1e-6) %>% 
+  mutate(lion_density = total_lions/homerangearea,
+         sighting_density = total_sightings/homerangearea)
+```
+
+Plot density
+
+```{r}
+ggplot(data = lion_density) +
+  geom_line(aes(x = year, y = lion_density, colour = clan)) +
+  facet_wrap(facets = ~clan) +
+  theme_classic()
+```
+
+Plot sightings
+
+```{r}
+ggplot(data = lion_density) +
+  geom_line(aes(x = year, y = sighting_density, colour = clan)) +
+  facet_wrap(facets = ~clan) +
+  theme_classic()
+```
+
+Join with existing data
+
+```{r}
+mod_data_all <- prey_plot_datapop |> 
+  left_join(lion_density |> 
+              sf::st_drop_geometry(),
+            by = c("clan", "year"))
+```
+
+### Disease
+
+```{r}
+disease_raw <- extract_database_table("injuries") %>% 
+  filter(grepl(tolower(cause), pattern = "strep|disease") & !grepl(ID, pattern = "cub")) %>% 
+  mutate(year = year(date_time),
+         clan = fetch_id_clan.current(ID = ID, at = date_time)) %>% 
+  group_by(year, clan) %>% 
+  summarise(clan_disease = n(),
+            .groups = "drop")
+```
+
+```{r}
+mod_data_alldisease <- mod_data_all %>% 
+  left_join(disease_raw, by = c("year", "clan")) %>% 
+  mutate(total_disease = tidyr::replace_na(clan_disease, 0),
+         from = lubridate::ymd(paste(year, "01", "01", sep = "-")),
+         to = lubridate::ymd(paste(year + 1, "01", "01")) - lubridate::days(1)) %>% 
+  mutate(clan_size = fetch_clan_number(clan = clan, from = from, to = to)) %>% 
+  mutate(total_disease_percap = total_disease/clan_size)
+```
+
+### Add conservation actions
+
+Road use change occurred during 2006.
+Grazing ban occurred during 2016.
+
+```{r}
+mod_data_alldisease_consv <- mod_data_alldisease %>% 
+  dplyr::mutate(roaduse = ifelse(year > 2006, "active", "inactive"),
+                grazing = ifelse(year %in% 1996:2016 & clan %in% c("A", "F"), "present", "abscent")) %>% 
+  arrange(clan, year)
+```
+
+### Standardise variables
+
+For our analysis it would be useful to use scaled Z-scores to compare different variables.
+
+```{r}
+mod_data_alldisease_consv$total_disease_percap_scale <- scale(mod_data_alldisease_consv$total_disease_percap)[,1]
+mod_data_alldisease_consv$lion_density_scale <- scale(mod_data_alldisease_consv$lion_density)[,1]
+mod_data_alldisease_consv$avgprey_scale <- scale(mod_data_alldisease_consv$avgprey)[,1]
+```
+
+### Save output data
+
+```{r}
+final_output <- mod_data_alldisease_consv |> 
+  select(lion_density, lion_density_scale, avgprey, avgprey_scale, total_disease_percap, total_disease_percap_scale, roaduse, grazing, clan, year)
+
+readr::write_excel_csv(final_output,
+                       here("./analysis/data/mechanistic_model_data.csv"))
+
+```

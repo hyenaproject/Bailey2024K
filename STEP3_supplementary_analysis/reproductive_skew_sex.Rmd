@@ -1,0 +1,173 @@
+---
+title: "Repro_skew"
+output: html_document
+date: '2022-10-26'
+---
+
+# Prepare workspace
+
+Load required packages
+
+```{r pkg}
+library(ggplot2)
+library(hyenaR)
+library(dplyr)
+library(here)
+library(spaMM)
+spaMM.options(nb_cores=10) ## CHECK WITH htop BEFORE USING TOO MANY
+library(doSNOW)
+library(DHARMa)
+library(ggrepel)
+library(ggtext)
+```
+
+Define which simulation type we're using
+
+```{r params}
+#Model 2 (polynomial age and random effect of year nested within clan)
+#Simulations have a variety of start points to reduce initialization bias
+folder_name <- "STEP1_estimate_K"
+db.path     <- here::here("../hyena_data/Fisidata_08_08_2022.sqlite")
+start_year  <- 1997
+```
+
+```{r}
+load_package_database.full(db.path)
+```
+
+# Reproductive skew
+
+Demonstrate reproductive skew in females in our data.
+
+```{r}
+LRS_output <- create_id_starting.table(sex = "female") %>% 
+  filter(!fetch_id_is.censored(ID) & fetch_id_duration.lifespan(ID, unit = "month") > 24) %>% 
+  mutate(LRS = fetch_id_number.offspring(ID, age.mature = 24, unit = "month"),
+         date_adult = fetch_id_date.at.age(ID, age = 24, unit = "month")) %>% 
+  mutate(rank = fetch_id_rank.std(ID = ID, at = date_adult),
+         rank_round = round(rank, digits = 1))
+```
+
+Plot 
+
+```{r}
+LRS_grouped <- LRS_output %>% 
+  group_by(rank_round) %>% 
+  summarise(mean = mean(LRS),
+            se = sd(LRS)/sqrt(n()),
+            n = n())
+```
+
+```{r}
+ggplot() +
+  geom_col(data = LRS_grouped, aes(x = rank_round, y = mean),
+           colour = "black", size = 0.25, fill = "grey45") +
+  geom_errorbar(data = LRS_grouped %>% filter(!is.na(se) & se != 0), aes(x = rank_round, ymin = mean - se, ymax = mean + se),
+                width = 0.025) +
+  scale_x_reverse() +
+  coord_cartesian(expand = FALSE) +
+  labs(x = "Female rank",
+       y = "Lifetime reproductive success") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"),
+        plot.margin = margin(t = 10, b = 10))
+
+ggsave("~/data/simulation_results/analysis/plots/reproductive_skew.png", dpi = 600,
+       width = 6, height = 4.5)
+```
+
+Estimate top Q vs. bottom Q
+
+```{r}
+LRS_topvbottom <- LRS_output %>% 
+  mutate(quartile = case_when(rank_round >= 0.5 ~ "top",
+                              rank_round <= -0.5 ~ "bottom")) %>% 
+  filter(!is.na(quartile)) %>% 
+  group_by(quartile) %>% 
+  summarise(mean = mean(LRS),
+            se = sd(LRS)/sqrt(n()),
+            n = n())
+
+LRS_topvbottom
+```
+
+Difference between groups.
+
+```{r}
+LRS_topvbottom$mean[2]/LRS_topvbottom$mean[1]
+```
+
+```{r}
+plot_data <- data.frame(rank_round = as.character(seq(1, -1, -0.1))) %>% 
+  left_join(LRS_output %>% 
+              mutate(rank_round = as.character(rank_round)), by = "rank_round") %>% 
+  mutate(rank_round_fct = forcats::fct_reorder(factor(rank_round), as.numeric(rank_round), .fun = first, .desc = TRUE))
+
+ggplot() +
+  geom_boxplot(data = plot_data, aes(x = rank_round_fct,
+                                     y = LRS)) +
+  labs(x = "Female rank",
+       y = "Lifetime reproductive success") +
+  scale_x_discrete(breaks = as.character(seq(1, -1, -0.5))) +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"))
+```
+
+```{r}
+library(ggdist)
+ggplot() +
+  stat_slabinterval(data = plot_data, aes(x = rank_round_fct,
+                                              y = LRS), position = "dodge", fill_type = "gradient",
+                        fill = "grey80", size = 0.5) +
+    stat_dots(data = plot_data, aes(x = rank_round_fct,
+                                              y = LRS),
+                      size = 0.5, colour = "black", fill = "black", alpha = 0.75) +
+# geom_boxplot(data = plot_data, aes(x = rank_round_fct,
+#                                     y = LRS)) +
+labs(x = "Female rank",
+     y = "Lifetime reproductive success") +
+  scale_x_discrete(breaks = as.character(seq(1, -1, -0.5))) +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"))
+```
+
+# Reproductive skew (males)
+
+Demonstrate reproductive skew in females in our data.
+
+```{r}
+LRS_output <- create_id_starting.table(sex = "male") %>% 
+  filter(!fetch_id_is.censored(ID) & fetch_id_duration.lifespan(ID, unit = "month") > 24) %>% 
+  mutate(LRS = fetch_id_number.offspring(ID, age.mature = 24, unit = "month"),
+         date_adult = fetch_id_date.at.age(ID, age = 24, unit = "month")) %>% 
+  mutate(rank = fetch_id_rank.sex.std(ID = ID, at = date_adult),
+         rank_round = round(rank, digits = 1))
+```
+
+Plot 
+
+```{r}
+LRS_grouped <- LRS_output %>% 
+  group_by(rank_round) %>% 
+  summarise(mean = mean(LRS),
+            se = sd(LRS)/sqrt(n()),
+            n = n())
+```
+
+```{r}
+ggplot() +
+  geom_col(data = LRS_grouped, aes(x = rank_round, y = mean),
+           colour = "black", size = 0.25, fill = "grey45") +
+  geom_errorbar(data = LRS_grouped %>% filter(!is.na(se) & se != 0), aes(x = rank_round, ymin = mean - se, ymax = mean + se),
+                width = 0.025) +
+  scale_x_reverse() +
+  coord_cartesian(expand = FALSE) +
+  labs(x = "Male rank",
+       y = "Lifetime reproductive success") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"),
+        plot.margin = margin(t = 10, b = 10))
+
+ggsave("~/data/simulation_results/analysis/plots/reproductive_skew_male.png", dpi = 600,
+       width = 6, height = 4.5)
+```

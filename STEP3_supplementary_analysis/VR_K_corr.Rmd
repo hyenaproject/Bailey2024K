@@ -1,0 +1,347 @@
+---
+title: "VR_K_correlation"
+author: "Liam"
+date: '2022-08-31'
+output: html_document
+---
+
+# Pre-plotting
+
+Load required packages
+
+```{r pkg}
+library(ggplot2)
+library(hyenaR)
+library(dplyr)
+library(here)
+```
+
+Define which simulation type we're using
+
+```{r}
+
+#Model 2 (polynomial age and random effect of year nested within clan)
+#Simulations have a variety of start points to reduce initialization bias
+folder_name <- "model2_multistart_v036"
+db.path     <- "../hyena_data/Fisidata_2022_08_08.sqlite"
+start_year  <- 1997
+```
+
+# PLOT 1: Absolute change in K and N over time
+
+Prep data
+
+```{r}
+
+## EXTRACT ESTIMATED K
+years <- start_year:2020
+
+pb_yr <- progress::progress_bar$new(total = length(years))
+
+Kplot_data <- purrr::map_df(.x = years,
+                            .f = function(year, folder_name){
+                              
+                              pb_yr$tick()
+                              
+                              txt_files <- list.files(here(paste0("./analysis/MS_preliminary_results/", folder_name, "/", year)),
+                                                      pattern = ".txt", full.names = TRUE)
+                              
+                              allsims <- purrr::map_df(.x = txt_files,
+                                                       .f = function(filepath){
+                                                         
+                                                         readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) %>%
+                                                           dplyr::mutate(sim = stringr::str_extract(filepath, "(?<=pop)[0-9]+"))
+                                                         
+                                                       })
+                              
+                              estK <- allsims %>% 
+                                dplyr::group_by(.data$sim) %>% 
+                                dplyr::mutate(start_pop = first(pop_size)) %>% 
+                                dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>% 
+                                dplyr::summarise(K = median(.data$pop_size),
+                                                 start_size = first(start_pop))
+                              
+                              plot_data <- estK %>% 
+                                dplyr::summarise(year = year,
+                                                 globalK = median(.data$K),
+                                                 lower = min(.data$K),
+                                                 upper = max(.data$K),
+                                                 points = list(data.frame(pop_size = .data$K,
+                                                                          start_pop = .data$start_size)))
+                              
+                              return(plot_data)
+                              
+                            }, folder_name = folder_name)
+
+```
+
+Extract observed VRs from model frame data (should be more easily accessible...)
+
+```{r}
+## GENERATED IN STEP0_prepare_data/model_fit.Rmd
+model_data <- readRDS(here::here("./analysis/MS_preliminary_results/results/data/model_data.RDS"))
+```
+
+```{r}
+
+Fad_surv_yr <- model_data$F_surv_data %>% 
+  filter(age >= 24) %>% 
+  group_by(year) %>% 
+  summarise(sum_surv = sum(surv),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_surv, n = n),
+         VR = "Female adult surv")
+
+Fcub_surv_yr <- model_data$F_surv_data %>% 
+  filter(age < 24) %>% 
+  group_by(year) %>% 
+  summarise(sum_surv = sum(surv),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_surv, n = n),
+         VR = "Female cub surv")
+
+M_predisp_surv_yr <- model_data$PreM_surv_data %>% 
+  group_by(year) %>% 
+  summarise(sum_surv = sum(surv),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_surv, n = n),
+         VR = "Male predisp surv")
+
+M_postdisp_surv_yr <- model_data$PostM_surv_data %>% 
+  group_by(year) %>% 
+  summarise(sum_surv = sum(surv),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_surv, n = n),
+         VR = "Male postdisp surv")
+
+twinning_yr <- model_data$F_twin_data %>% 
+  group_by(year) %>% 
+  summarise(sum_twin = sum(twin),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_twin, n = n),
+         VR = "Twinning")
+
+primi_repro_yr <- model_data$F_repro_primi %>% 
+  group_by(year) %>% 
+  summarise(sum_repro = sum(repro),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_repro, n = n),
+         VR = "Primiparous repro")
+
+nonprimi_repro_yr <- model_data$F_repro_nonprimi %>% 
+  group_by(year) %>% 
+  summarise(sum_repro = sum(repro),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_repro, n = n),
+         VR = "Non-primiparous repro")
+
+df_life <- list(Fad_surv_yr, Fcub_surv_yr, M_predisp_surv_yr, M_postdisp_surv_yr, twinning_yr, primi_repro_yr, nonprimi_repro_yr)
+
+```
+
+Estimate time varying cor for each
+
+```{r}
+
+library(timevarcorr)
+
+purrr::imap(df_life, .f = ~{
+  
+  cor_data <- left_join(..1, select(Kplot_data, year, globalK), by = "year")
+  
+  with(cor_data, tcor(x = globalK, y = mean, t = year, kernel = "box", CI = TRUE)) %>% 
+    mutate(VR = cor_data$VR[1])
+  
+}) %>% 
+  dplyr::bind_rows() -> timevarcorr_all
+
+#Group female and male together
+plot_data <- timevarcorr_all %>% 
+  mutate(facet = case_when(stringr::str_detect(VR, "repro$") ~ "Reproduction",
+                           VR == "Twinning" ~ "Litter size",
+                           stringr::str_detect(VR, "^Female") ~ "Female",
+                           stringr::str_detect(VR, "^Male") ~ "Male"),
+         name = case_when(stringr::str_detect(VR, "repro$") ~ stringr::str_remove(VR, " repro"),
+                          stringr::str_detect(VR, "^Female") ~ stringr::str_extract(VR, "(?<=Female )[a-z]*"),
+                          stringr::str_detect(VR, "^Male") ~ stringr::str_extract(VR, "(?<=Male )[a-z]*"),
+                          TRUE ~ VR)) %>% 
+  mutate(facet = forcats::fct_relevel(facet, "Female", "Male", "Reproduction","Litter size"))
+
+ggplot() +
+  geom_hline(yintercept = 0, size = 0.5, colour = "black") +
+  geom_ribbon(data = plot_data, aes(x = t, ymin = lwr, ymax = upr, group = name, fill = name),
+              alpha = 0.5) +
+  geom_line(data = plot_data, aes(x = t, y = r, group = name, colour = name)) +
+  geom_segment(data = data.frame(x = seq(1995, 2020, 5), xend = seq(1995, 2020, 5),
+                                 y = 0, yend = -0.05, facet = "Reproduction"),
+               aes(x = x, xend = xend, y = y, yend = yend), size = 0.5, lineend = "round") +
+  scale_fill_manual(values   = c("grey10", "grey70", "grey10", "grey70", "grey10", "grey70", "grey10")) +
+  scale_colour_manual(values = c("grey10", "grey70", "grey10", "grey70", "grey10", "grey70", "grey10")) +
+  scale_x_continuous(breaks = seq(1995, 2020, 5)) +
+  coord_cartesian(ylim = c(0, NA),
+                  xlim = c(1995, 2021),
+                  expand = FALSE, clip = "off") +
+  facet_wrap(facets = ~facet) +
+  labs(y = "Correlation") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.ticks.y = element_line(colour = "black"),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text = element_text(colour = "black"),
+        axis.text.x = element_text(margin = margin(t = 5)),
+        axis.line.x = element_blank())
+
+```
+
+Separate female survival into top and low ranking individuals...
+
+```{r}
+Fad_surv_yr_low <- model_data$F_surv_data %>% 
+  filter(age >= 24 & rank_category == "lower.ranking") %>% 
+  group_by(year) %>% 
+  summarise(sum_surv = sum(surv),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_surv, n = n),
+         VR = "Female low rank adult surv")
+
+Fad_surv_yr_high <- model_data$F_surv_data %>% 
+  filter(age >= 24 & rank_category == "top5") %>% 
+  group_by(year) %>% 
+  summarise(sum_surv = sum(surv),
+            n = n()) %>% 
+  mutate(binom::binom.wilson(x = sum_surv, n = n),
+         VR = "Female high rank adult surv")
+
+df_life_rank <- list(Fad_surv_yr_low, Fad_surv_yr_high)
+
+```s
+
+Estimate time varying cor for each
+
+```{r}
+
+library(timevarcorr)
+
+purrr::imap(df_life_rank, .f = ~{
+  
+  cor_data <- left_join(..1, select(Kplot_data, year, globalK), by = "year")
+  
+  with(cor_data, tcor(x = globalK, y = mean, t = year, kernel = "box", CI = TRUE)) %>% 
+    mutate(VR = cor_data$VR[1])
+  
+}) %>% 
+  dplyr::bind_rows() -> timevarcorr_all
+
+#Group female and male together
+plot_data <- timevarcorr_all %>% 
+  mutate(facet = VR,
+         name = VR)
+
+ggplot() +
+  geom_hline(yintercept = 0, size = 0.5, colour = "black") +
+  geom_ribbon(data = plot_data, aes(x = t, ymin = lwr, ymax = upr, group = name, fill = name),
+              alpha = 0.5) +
+  geom_line(data = plot_data, aes(x = t, y = r, group = name, colour = name)) +
+  # geom_segment(data = data.frame(x = seq(1995, 2020, 5), xend = seq(1995, 2020, 5),
+  #                  y = 0, yend = -0.05, facet = "Reproduction"),
+  #              aes(x = x, xend = xend, y = y, yend = yend), size = 0.5, lineend = "round") +
+  scale_fill_manual(values   = c("grey10", "grey70", "grey10", "grey70", "grey10", "grey70", "grey10")) +
+  scale_colour_manual(values = c("grey10", "grey70", "grey10", "grey70", "grey10", "grey70", "grey10")) +
+  scale_x_continuous(breaks = seq(1995, 2020, 5)) +
+  coord_cartesian(ylim = c(0, NA),
+                  xlim = c(1995, 2021),
+                  expand = FALSE, clip = "off") +
+  facet_wrap(facets = ~facet) +
+  labs(y = "Correlation") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.ticks.y = element_line(colour = "black"),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.text = element_text(colour = "black"),
+        axis.text.x = element_text(margin = margin(t = 5)),
+        axis.line.x = element_blank())
+
+```
+
+Estimate carrying capacity for each sex separately...
+
+```{r}
+library(lay)
+## EXTRACT ESTIMATED K
+years <- start_year:2020
+
+pb_yr <- progress::progress_bar$new(total = length(years))
+
+K_data_sex <- purrr::map_df(.x = years,
+                            .f = function(year, folder_name){
+                              
+                              pb_yr$tick()
+                              
+                              txt_files <- list.files(here(paste0("./analysis/MS_preliminary_results/", folder_name, "/", year)),
+                                                      pattern = ".txt", full.names = TRUE)
+                              
+                              allsims <- purrr::map_df(.x = txt_files,
+                                                       .f = function(filepath){
+                                                         
+                                                         readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) %>%
+                                                           dplyr::mutate(sim = stringr::str_extract(filepath, "(?<=pop)[0-9]+"))
+                                                         
+                                                       })
+                              
+                              estK <- allsims %>% 
+                                #Remove dead cols
+                                dplyr::select(!contains("dead")) %>% 
+                                #Use lay to determine rowwise sums
+                                dplyr::mutate(fem_sum = lay(across(contains("fem")), .fn = ~sum(., na.rm = TRUE)),
+                                              male_sum = lay(across(contains("male")), .fn = ~sum(., na.rm = TRUE)),
+                                              bothsex_sum = fem_sum + male_sum) %>% 
+                                dplyr::group_by(.data$sim) %>% 
+                                dplyr::mutate(start_pop = first(pop_size)) %>% 
+                                dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>% 
+                                dplyr::summarise(Kfem = median(.data$fem_sum),
+                                                 Kmal = median(.data$male_sum),
+                                                 Ktotal = median(.data$pop_size),
+                                                 start_size = first(start_pop),
+                                                 year = year)
+                              
+                              return(estK)
+                              
+                            }, folder_name = folder_name)
+
+```
+
+```{r}
+plot_data_sex <- K_data_sex %>% 
+  group_by(year) %>% 
+  summarise(medianKmale = median(Kmal),
+            medianKfem  = median(Kfem)) %>% 
+  mutate(startdate = lubridate::ymd(paste(year, "01", "01", sep = "-")),
+         enddate = lubridate::ymd(paste(year + 1, "01", "01", sep = "-"))) %>% 
+  tidyr::pivot_longer(startdate:enddate,
+                      names_to = "dategrp", values_to = "date") %>% 
+  tidyr::pivot_longer(cols = medianKmale:medianKfem,
+                      names_to = "sex",
+                      values_to = "medianK")
+
+ggplot() +
+  geom_line(data = plot_data_sex,
+            aes(x = date, y = medianK, colour = sex)) +
+  scale_y_continuous(limits = c(0, NA)) +
+  theme_classic()
+```
+
+Relative
+
+```{r}
+plot_data_sex_rel <- plot_data_sex %>% 
+  group_by(sex) %>% 
+  mutate(medianK_zscore = (medianK - mean(medianK))/sd(medianK))
+
+ggplot() +
+  geom_line(data = plot_data_sex_rel,
+            aes(x = date, y = medianK_zscore, colour = sex)) +
+  # scale_y_continuous(limits = c(0, NA)) +
+  theme_classic()
+```

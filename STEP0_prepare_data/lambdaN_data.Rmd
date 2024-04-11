@@ -1,0 +1,51 @@
+---
+title: "lambdaN_data"
+output: html_document
+date: "2024-04-09"
+---
+
+```{r, message = FALSE}
+library(SHIM)
+library(hyenaR)
+library(dplyr)
+```
+
+Define important variables:
+
+- Database path
+
+- Age at which recruits are considered (we use 6 months to match data in simulation)
+
+- Time step (we use 6 months. 1 month has very high temporal auto-correlation)
+
+```{r}
+db.path     <- "~/data/hyena_data/Fisidata_2023_03_07.sqlite"
+recruit_age <- 6
+time_step   <- 6
+```
+
+```{r}
+load_package_database.full(db.path = db.path)
+```
+
+# Extract data on population size and recruits.
+
+```{r}
+pop_size <- data.frame(from = seq(as.Date("1996-07-01"), as.Date("2022-01-01"), by = paste(time_step, "months"))) %>%
+  mutate(to = lead(from)) %>% 
+  filter(!is.na(to)) %>% 
+  mutate(pop_size = fetch_pop_number(main.clans = TRUE, from = from, to = to)) %>% 
+  rowwise() %>% 
+  mutate(all_cubs = list(find_pop_id.anysex.cub(from = from, to = to, lifestage.overlap = "start"))) %>% 
+  mutate(number_recruit = sum(fetch_id_is.alive(ID = all_cubs, at = fetch_id_date.at.age(ID = all_cubs, age = recruit_age, unit = "month")))) %>% 
+  ungroup() %>% 
+  #We also want Nt+1 and log growth values
+  mutate(Nt1 = lead(pop_size),
+         lngrowth = log(Nt1) - log(pop_size))
+```
+
+Save output for reproducibility without .sql file
+
+```{r}
+readr::write_excel_csv(pop_size, here("./analysis/data/supp_data1_alternativeK_data.csv"))
+```

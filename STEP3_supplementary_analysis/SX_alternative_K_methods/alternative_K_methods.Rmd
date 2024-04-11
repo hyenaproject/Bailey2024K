@@ -1,0 +1,1490 @@
+---
+title: "Alternative_K_method"
+author: "Liam"
+date: '2022-08-23'
+output:
+  html_document: default
+  pdf_document: default
+---
+
+We will use mean square error to estimate K using different traditional methods.
+
+# Prepare workspace
+
+```{r, message = FALSE}
+library(ggplot2)
+library(FSA)
+library(SHIM)
+library(hyenaR)
+library(dplyr)
+```
+
+```{r}
+pop_size <- read.csv(here("./analysis/data/supp_data1_alternativeK_data.csv"))
+```
+
+Truncated data where removing last timestep where population at t+1 is unknown.
+
+```{r}
+pop_size_trunc <- pop_size %>% 
+  filter(!is.na(lngrowth))
+```
+
+# Write functions
+
+## Demographic fns
+
+These functions are all used to estimate K when given N.
+
+```{r}
+sheph_mod <- FSA::srFuns(type = "Shepherd")
+
+ricker_exp_mod <- function(N, Rmax, K){
+  
+  K <- 1/K
+  
+  output <- Rmax*(1-N/K)
+  
+  return(output)
+  
+}
+
+ricker_hyp_mod <- function(N, Rmax, K){
+  
+  K <- 1/K
+  
+  output <- Rmax - log(1 + (exp(Rmax) - 1)*N/K)
+  
+  return(output)
+  
+}
+
+bh_exp_mod <- function(N, Rmax, K){
+  
+  K <- 1/K
+  
+  output <- N*exp(Rmax*(1 - N/K))
+  
+  return(output)
+  
+}
+
+bh_hyp_mod <- function(N, Rmax, K){
+  
+  K <- 1/K
+  
+  numerator   <- exp(Rmax)*N
+  denominator <- 1 + (exp(Rmax) - 1)*N/K
+  
+  output <- numerator/denominator
+  
+  return(output)
+  
+}
+
+#Wrapper to fit all BH and Ricker mods
+aggregate_mod <- function(N, Rmax, K, type){
+  
+  mod <- switch(type,
+                Ricker_exp = ricker_exp_mod,
+                Ricker_hyp = ricker_hyp_mod,
+                BH_exp = bh_exp_mod,
+                BH_hyp = bh_hyp_mod)
+  
+  mod(N = N, Rmax = Rmax, K = K)
+  
+}
+
+```
+
+## Create dummy data that will be used to test optimizers on known outcomes.
+
+```{r}
+#Test it out using nlm and dummy data
+pop_size_test <- data.frame(pop_size = floor(runif(n = 1000, max = 1000))) %>% 
+  mutate(number_recruit = sheph_mod(S = pop_size, a = 0.05, b = 1/700, c = 2) + rnorm(n = n(), sd = 3),
+         lngrowth = ricker_exp_mod(N = pop_size, Rmax = 5, K = 1/700) + rnorm(n = n(), sd = 0.5),
+         Nt1 = as.integer(bh_exp_mod(N = pop_size, Rmax = 0.5, K = 1/700) + rnorm(n = n(), sd = 1))) %>% 
+  #If it dropped below 0 just fix at 0
+  mutate(number_recruit = case_when(number_recruit < 0 ~ 0,
+                                    TRUE ~ number_recruit)) %>% 
+  arrange(pop_size)
+```
+
+## Generic optimizer
+
+```{r}
+
+generic_optim <- function(input, data, type = c("Ricker_exp", "Ricker_hyp",
+                                                "BH_exp", "BH_hyp",
+                                                "Shepherd")){
+  
+  y_obsv <- switch(type,
+                   Ricker_exp = data$lngrowth,
+                   Ricker_hyp = data$lngrowth,
+                   BH_exp = data$Nt1,
+                   BH_hyp = data$Nt1,
+                   Shepherd = data$number_recruit)
+  
+  if (type == "Shepherd") {
+    y_hat  <- mod(S = data$pop_size, a = input[1], b = input[2], c = input[3])
+  } else {
+    y_hat  <- aggregate_mod(N = data$pop_size, Rmax = input[1], K = input[2], type = type)
+  }
+  
+  sq_diff <- (y_obsv - y_hat)^2
+  
+  sum(sq_diff)/nrow(data)
+  
+}
+```
+
+## Iterate over multiple starting values
+
+Function to return MSE and K from optimizer with given inputs
+
+```{r}
+generic_optim_output <- function(input, data, type, optim_fn, ...){
+  
+  output <- optim_fn(input,
+                     generic_optim,
+                     data = data, type = type,
+                     ...)
+  
+  input_df <- as.data.frame(matrix(input, ncol = 2))
+  
+  if (inherits(output, "nloptr")) {
+    return(tibble(MSE = output$objective,
+                  optRmax = output$solution[1],
+                  optK = 1/output$solution[2]) %>% bind_cols(input_df))
+  } else if (inherits(output, "minqa")) {
+    return(tibble(MSE = output$fval,
+                  optRmax = output$par[1],
+                  optK = 1/output$par[2]) %>% bind_cols(input_df))
+  } else {
+    return(tibble(MSE = ifelse("value" %in% names(output), output$value, output$objective),
+                  optRmax = output$par[1],
+                  optK = 1/output$par[2]) %>% bind_cols(input_df))
+  }
+  
+}
+```
+
+```{r}
+iterate_optim <- function(Rmax, K, data, type, optim_fn, ...){
+  
+  if (all(sapply(list(Rmax, K), FUN = length) > 1)) {
+    stop("One of K or Rmax should be fixed")
+  }
+  
+  if (length(Rmax) > 1) {
+    output <- purrr::map_df(.x = Rmax,
+                            .f = function(Rmax, K){
+                              
+                              generic_optim_output(input = c(Rmax, K),
+                                                   data = data,
+                                                   type = type,
+                                                   optim_fn = optim_fn, ...)
+                              
+                            }, K = K)
+  } else {
+    output <- purrr::map_df(.x = K,
+                            .f = function(Rmax, K){
+                              
+                              generic_optim_output(input = c(Rmax, K),
+                                                   data = data,
+                                                   type = type,
+                                                   optim_fn = optim_fn, ...)
+                              
+                            }, Rmax = Rmax)
+  }
+  
+  return(output)
+  
+}
+```
+
+```{r}
+plot_iterated_optim <- function(input, k = 20){
+  ggplot(data = input) +
+    geom_point(aes(x = optK, y = MSE)) +
+    geom_smooth(aes(x = optK, y = MSE),
+                method = "gam",
+                formula = y ~ s(x, k = k), se = FALSE,
+                linewidth = 0.25)
+}
+```
+
+Test example
+
+```{r}
+plot_output <- iterate_optim(Rmax = seq(0, 2, 0.1), K = 1/200, data = pop_size_test, type = "Ricker_exp",
+                             optim_fn = nloptr::nloptr,
+                             lb = c(0, 1/2000),
+                             ub = c(Inf, 1/100),
+                             opts = list(algorithm = "NLOPT_LN_BOBYQA",                                     
+                                         #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                         maxeval = -1,                                     
+                                         #Minimum printing                                     
+                                         print_level = 0,                                     
+                                         #Set seed                                     
+                                         ranseed = 123))
+
+plot_iterated_optim(plot_output, k = 10)
+```
+
+Function that iterates across both Rmax and K for every Ricker and BH function. We fix the unused variable at its mean.
+
+```{r}
+iterate_optim_all <- function(Rmax, K, data, type, optim_fn, ...){
+  
+  all_mods <- purrr::map_df(.x = c("Ricker_exp", "Ricker_hyp",
+                                   "BH_exp", "BH_hyp"),
+                            .f = function(type){
+                              
+                              Rmaxoutput <- purrr::map_df(.x = Rmax,
+                                                          .f = function(Rmax, K, type){
+                                                            
+                                                            generic_optim_output(input = c(Rmax, K),
+                                                                                 data = data,
+                                                                                 type = type,
+                                                                                 optim_fn = optim_fn, ...)
+                                                            
+                                                          }, K = mean(K), type = type)
+                              
+                              Koutput <- purrr::map_df(.x = K,
+                                                       .f = function(Rmax, K, type){
+                                                         
+                                                         generic_optim_output(input = c(Rmax, K),
+                                                                              data = data,
+                                                                              type = type,
+                                                                              optim_fn = optim_fn, ...)
+                                                         
+                                                       }, Rmax = mean(Rmax), type = type)
+                              
+                              output <- Rmaxoutput %>% 
+                                bind_rows(Koutput) %>% 
+                                mutate(type = type)
+                              
+                            })
+  
+  return(all_mods)
+  
+}
+```
+
+```{r}
+plot_iterated_optim_all <- function(input, k = 20, scales = "free"){
+  ggplot(data = input) +
+    geom_point(aes(x = optK, y = MSE)) +
+    geom_smooth(aes(x = optK, y = MSE),
+                method = "gam",
+                formula = y ~ s(x, k = k), se = FALSE,
+                linewidth = 0.25) +
+    facet_wrap(facets = ~type, scales = scales)
+}
+```
+
+Test
+
+```{r}
+test_optim_all <- iterate_optim_all(Rmax = seq(0, 1, 1e-3), K = 1/seq(100, 1000, 100), data = pop_size_test,
+                                    optim_fn = nloptr::nloptr,
+                                    lb = c(0, 1/2000),
+                                    ub = c(Inf, 1/100),
+                                    opts = list(algorithm = "NLOPT_LN_BOBYQA",                                     
+                                                #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                maxeval = -1,
+                                                #Minimum printing                                     
+                                                print_level = 0,                                     
+                                                #Set seed                                     
+                                                ranseed = 123))
+
+#In this case, Ricker hyperbolic seems to fail
+plot_iterated_optim_all(test_optim_all, k = 10)
+```
+
+# Run different optimizers
+
+## nloptr bobyqa
+
+First, test it works on data where we know the values. Try this for Ricker and Beverton-Holt. Just use exponential form of BH and Ricker, should be comparable.
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Looks ok
+(test <- nloptr::nloptr(x0 = c(0, 1/200),
+                        eval_f = generic_optim,
+                        lb = c(0, 1/2000),
+                        ub = c(2, 1/100),
+                        data = pop_size_test, type = "Ricker_exp",
+                        opts = list(algorithm = "NLOPT_LN_BOBYQA",
+                                    #By making maxeval -1 we don't put a limit on number of evaluations
+                                    maxeval = -1,
+                                    #Minimum printing
+                                    print_level = 0,
+                                    #Set seed
+                                    ranseed = 123)))
+1/test$solution[2]
+```
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Looks ok
+(test <- nloptr::nloptr(x0 = c(0, 1/200),
+                        eval_f = generic_optim,
+                        lb = c(0, 1/2000),
+                        ub = c(2, 1/100),
+                        data = pop_size_test, type = "BH_exp",
+                        opts = list(algorithm = "NLOPT_LN_BOBYQA",                                     
+                                    #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                    maxeval = -1,                                     
+                                    #Minimum printing                                     
+                                    print_level = 0,                                     
+                                    #Set seed                                     
+                                    ranseed = 123)))
+1/test$solution[2]
+```
+
+Now use to optimize real data.
+
+Ricker exponential
+
+```{r}
+(nloptr_bobyqa_Rickerexp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                           eval_f = generic_optim,
+                                           lb = c(0, 1/2000),
+                                           ub = c(Inf, 1/100),
+                                           data = pop_size_trunc, type = "Ricker_exp",
+                                           opts = list(algorithm = "NLOPT_LN_BOBYQA",                                     
+                                                       #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                       maxeval = -1,                                     
+                                                       #Minimum printing                                     
+                                                       print_level = 0,                                     
+                                                       #Set seed                                     
+                                                       ranseed = 123)))
+paste("K =", 1/nloptr_bobyqa_Rickerexp$solution[2])
+```
+
+Ricker hyperbolic
+
+```{r}
+(nloptr_bobyqa_Rickerhyp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                           eval_f = generic_optim,
+                                           lb = c(0, 1/2000),
+                                           ub = c(Inf, 1/100),
+                                           data = pop_size_trunc, type = "Ricker_hyp",
+                                           opts = list(algorithm = "NLOPT_LN_BOBYQA",                                     
+                                                       #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                       maxeval = -1,                                     
+                                                       #Minimum printing                                     
+                                                       print_level = 0,                                     
+                                                       #Set seed                                     
+                                                       ranseed = 123)))
+paste("K =", 1/nloptr_bobyqa_Rickerhyp$solution[2])
+```
+
+Beverton-Holt exponential
+
+```{r}
+(nloptr_bobyqa_BHexp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                       eval_f = generic_optim,
+                                       lb = c(0, 1/2000),
+                                       ub = c(Inf, 1/100),
+                                       data = pop_size_trunc, type = "BH_exp",
+                                       opts = list(algorithm = "NLOPT_LN_BOBYQA",                                     
+                                                   #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                   maxeval = -1,                                     
+                                                   #Minimum printing                                     
+                                                   print_level = 0,                                     
+                                                   #Set seed                                     
+                                                   ranseed = 123)))
+paste("K =", 1/nloptr_bobyqa_BHexp$solution[2])
+```
+
+Beverton-Holt hyperbolic
+
+```{r}
+(nloptr_bobyqa_BHhyp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                       eval_f = generic_optim,
+                                       lb = c(0, 1/2000),
+                                       ub = c(Inf, 1/100),
+                                       data = pop_size_trunc, type = "BH_hyp",
+                                       opts = list(algorithm = "NLOPT_LN_BOBYQA",                                     
+                                                   #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                   maxeval = -1,                                     
+                                                   #Minimum printing                                     
+                                                   print_level = 0,                                     
+                                                   #Set seed                                     
+                                                   ranseed = 123)))
+paste("K =", 1/nloptr_bobyqa_BHhyp$solution[2])
+```
+
+Test how sensititive this is to optimizers starting values.
+
+```{r}
+plot_nloptr_bobyqa <- iterate_optim_all(Rmax = seq(0, 1, 1e-3), K = 1/seq(100, 1000, 100), data = pop_size_trunc,
+                                        optim_fn = nloptr::nloptr,
+                                        lb = c(0, 1/2000),
+                                        ub = c(Inf, 1/100),
+                                        opts = list(algorithm = "NLOPT_LN_BOBYQA",                                     
+                                                    #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                    maxeval = -1,
+                                                    #Found that setting xtol_abs helps to reduce sensitivity to starting vals
+                                                    xtol_abs = c(1e-4, 0),
+                                                    #Minimum printing                                     
+                                                    print_level = 0,                                     
+                                                    #Set seed                                     
+                                                    ranseed = 123))
+
+plot_iterated_optim_all(plot_nloptr_bobyqa, k = 10)
+```
+
+Extract best starting parameters to achieve lowest MSE and fit predicted values.
+
+```{r}
+plot_nloptr_bobyqa_best <- plot_nloptr_bobyqa %>% 
+  group_by(type) %>% 
+  filter(MSE == min(MSE)) %>% 
+  rowwise() %>% 
+  mutate(y = list(aggregate_mod(N = plot_range, Rmax = optRmax, K = 1/optK, type = type)),
+         x = list(plot_range),
+         opt = "NLOPTR_BOBYQA") %>% 
+  ungroup()
+```
+
+## nloptr cobyla
+
+First, test it works on data where we know the values. Try this for Ricker, Beverton-Holt, and Shepherd. Just use exponential form of BH and Ricker, should be comparable.
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Looks ok
+(test <- nloptr::nloptr(x0 = c(0, 1/200),
+                        eval_f = generic_optim,
+                        lb = c(0, 1/2000),
+                        ub = c(2, 1/100),
+                        data = pop_size_test, type = "Ricker_exp",
+                        opts = list(algorithm = "NLOPT_LN_COBYLA",                                     
+                                    #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                    maxeval = -1,                                     
+                                    #Minimum printing                                     
+                                    print_level = 0,                                     
+                                    #Set seed                                     
+                                    ranseed = 123)))
+1/test$solution[2]
+```
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+(test <- nloptr::nloptr(x0 = c(0, 1/200),
+                        eval_f = generic_optim,
+                        lb = c(0, 1/2000),
+                        ub = c(2, 1/100),
+                        data = pop_size_test, type = "BH_exp",
+                        opts = list(algorithm = "NLOPT_LN_COBYLA",                                     
+                                    #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                    maxeval = -1,                                     
+                                    #Minimum printing                                     
+                                    print_level = 0,                                     
+                                    #Set seed                                     
+                                    ranseed = 123)))
+1/test$solution[2]
+```
+
+Now use to optimize real data.
+
+Ricker exponential
+
+```{r}
+(nloptr_cobyla_Rickerexp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                           eval_f = generic_optim,
+                                           lb = c(0, 1/2000),
+                                           ub = c(Inf, 1/100),
+                                           data = pop_size_trunc, type = "Ricker_exp",
+                                           opts = list(algorithm = "NLOPT_LN_COBYLA",                                     
+                                                       #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                       maxeval = -1,                                     
+                                                       #Minimum printing                                     
+                                                       print_level = 0,                                     
+                                                       #Set seed                                     
+                                                       ranseed = 123)))
+paste("K =", 1/nloptr_cobyla_Rickerexp$solution[2])
+```
+
+Ricker hyperbolic
+
+```{r}
+(nloptr_cobyla_Rickerhyp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                           eval_f = generic_optim,
+                                           lb = c(0, 1/2000),
+                                           ub = c(Inf, 1/100),
+                                           data = pop_size_trunc, type = "Ricker_hyp",
+                                           opts = list(algorithm = "NLOPT_LN_COBYLA",                                     
+                                                       #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                       maxeval = -1,                                     
+                                                       #Minimum printing                                     
+                                                       print_level = 0,                                     
+                                                       #Set seed                                     
+                                                       ranseed = 123)))
+paste("K =", 1/nloptr_cobyla_Rickerhyp$solution[2])
+```
+
+Beverton-Holt exponential
+
+```{r}
+(nloptr_cobyla_BHexp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                       eval_f = generic_optim,
+                                       lb = c(0, 1/2000),
+                                       ub = c(Inf, 1/100),
+                                       data = pop_size_trunc, type = "BH_exp",
+                                       opts = list(algorithm = "NLOPT_LN_COBYLA",                                     
+                                                   #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                   maxeval = -1,                                     
+                                                   #Minimum printing                                     
+                                                   print_level = 0,                                     
+                                                   #Set seed                                     
+                                                   ranseed = 123)))
+paste("K =", 1/nloptr_cobyla_BHexp$solution[2])
+```
+
+Beverton-Holt hyperbolic
+
+```{r}
+(nloptr_cobyla_BHhyp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                       eval_f = generic_optim,
+                                       lb = c(0, 1/2000),
+                                       ub = c(Inf, 1/100),
+                                       data = pop_size_trunc, type = "BH_hyp",
+                                       opts = list(algorithm = "NLOPT_LN_COBYLA",                                     
+                                                   #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                   maxeval = -1,                                     
+                                                   #Minimum printing                                     
+                                                   print_level = 0,                                     
+                                                   #Set seed                                     
+                                                   ranseed = 123)))
+paste("K =", 1/nloptr_cobyla_BHhyp$solution[2])
+```
+
+Test how sensititive this is to optimizers starting values.
+
+```{r}
+plot_nloptr_cobyla <- iterate_optim_all(Rmax = seq(0, 1, 1e-3), K = 1/seq(100, 1000, 100), data = pop_size_trunc,
+                                        optim_fn = nloptr::nloptr,
+                                        lb = c(0, 1/2000),
+                                        ub = c(Inf, 1/100),
+                                        opts = list(algorithm = "NLOPT_LN_COBYLA",                                     
+                                                    #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                    maxeval = -1,
+                                                    #Found that setting xtol_abs helps to reduce sensitivity to starting vals
+                                                    xtol_abs = c(5e-5, 0),
+                                                    #Minimum printing                                     
+                                                    print_level = 0,                                     
+                                                    #Set seed                                     
+                                                    ranseed = 123))
+
+plot_iterated_optim_all(plot_nloptr_cobyla, k = 10, scales = "free")
+```
+
+Extract best starting parameters to achieve lowest MSE
+
+```{r}
+plot_nloptr_cobyla_best <- plot_nloptr_cobyla %>% 
+  group_by(type) %>% 
+  filter(MSE == min(MSE)) %>% 
+  rowwise() %>% 
+  mutate(y = list(aggregate_mod(N = plot_range, Rmax = optRmax, K = 1/optK, type = type)),
+         x = list(plot_range),
+         opt = "NLOPTR_COBYLA") %>% 
+  ungroup()
+```
+
+## nloptr lbfgs
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Looks ok
+(test <- nloptr::lbfgs(x0 = c(0, 1/200), f = generic_optim, lower = c(0, 1/2000), upper = c(2, 1/100),
+                       data = pop_size_test, type = "Ricker_exp",
+                       #Specifying xtol_rel seems to be necessary to achieve convergence
+                       control = list(xtol_rel = 1e-7)))
+1/test$par[2]
+```
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Looks ok
+(test <- nloptr::lbfgs(x0 = c(0, 1/200), f = generic_optim, lower = c(0, 1/2000), upper = c(2, 1/100),
+                       data = pop_size_test, type = "BH_exp",
+                       control = list(xtol_rel = 1e-7)))
+1/test$par[2]
+```
+
+Now use to optimize real data.
+
+Ricker exponential
+
+```{r}
+(nloptr_lbfgs_Rickerexp <- nloptr::lbfgs(x0 = c(0, 1/200), f = generic_optim, lower = c(0, 1/2000), upper = c(2, 1/100),
+                                         data = pop_size_trunc, type = "Ricker_exp",
+                                         control = list(xtol_rel = 1e-7)))
+paste("K =", 1/nloptr_lbfgs_Rickerexp$par[2])
+```
+
+Ricker hyperbolic
+
+```{r}
+(nloptr_lbfgs_Rickerhyp <- nloptr::lbfgs(x0 = c(0, 1/200), f = generic_optim, lower = c(0, 1/2000), upper = c(2, 1/100),
+                                         data = pop_size_trunc, type = "Ricker_hyp",
+                                         control = list(xtol_rel = 1e-7)))
+paste("K =", 1/nloptr_lbfgs_Rickerhyp$par[2])
+```
+
+Beverton-Holt exponential
+
+```{r}
+(nloptr_lbfgs_BHexp <- nloptr::lbfgs(x0 = c(0, 1/200), f = generic_optim, lower = c(0, 1/2000), upper = c(2, 1/100),
+                                     data = pop_size_trunc, type = "BH_exp",
+                                     control = list(xtol_rel = 1e-7)))
+paste("K =", 1/nloptr_lbfgs_BHexp$par[2])
+```
+
+Beverton-Holt hyperbolic
+
+```{r}
+(nloptr_lbfgs_BH_hyp <- nloptr::lbfgs(x0 = c(0, 1/200), f = generic_optim, lower = c(0, 1/2000), upper = c(2, 1/100),
+                                      data = pop_size_trunc, type = "BH_hyp",
+                                      control = list(xtol_rel = 1e-7)))
+paste("K =", 1/nloptr_lbfgs_BH_hyp$par[2])
+```
+
+Test how sensititive this is to optimizers starting values.
+
+```{r}
+plot_nloptr_lbfgs <- iterate_optim_all(Rmax = seq(0, 1, 1e-3), K = 1/seq(100, 1000, 100), data = pop_size_trunc,
+                                       optim_fn = nloptr::lbfgs,
+                                       lower = c(0, 1/2000),
+                                       upper = c(Inf, 1/100),
+                                       control = list(xtol_rel = 1e-7))
+
+plot_iterated_optim_all(plot_nloptr_lbfgs, k = 10, scales = "free")
+```
+
+Extract best starting parameters to achieve lowest MSE
+
+```{r}
+plot_nloptr_lbfgs_best <- plot_nloptr_lbfgs %>% 
+  group_by(type) %>% 
+  filter(MSE == min(MSE)) %>% 
+  #If there are the same ones, just take first
+  slice(1) %>% 
+  rowwise() %>% 
+  mutate(y = list(aggregate_mod(N = plot_range, Rmax = optRmax, K = 1/optK, type = type)),
+         x = list(plot_range),
+         opt = "NLOPTR_LBFGS") %>% 
+  ungroup()
+```
+
+## nloptr PRAXIS
+
+First, test it works on data where we know the values. Try this for Ricker, Beverton-Holt, and Shepherd. Just use exponential form of BH and Ricker, should be comparable.
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Not optimising well....
+(test <- nloptr::nloptr(x0 = c(0, 1/200),
+                        eval_f = generic_optim,
+                        lb = c(0, 1/2000),
+                        ub = c(2, 1/100),
+                        data = pop_size_test, type = "Ricker_exp",
+                        opts = list(algorithm = "NLOPT_LN_PRAXIS",                                     
+                                    #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                    maxeval = -1, 
+                                    #Minimum printing                                     
+                                    print_level = 0,                                     
+                                    #Set seed                                     
+                                    ranseed = 123)))
+1/test$solution[2]
+```
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Working better....so might be doing better for BH than Ricker
+(test <- nloptr::nloptr(x0 = c(0, 1/200),
+                        eval_f = generic_optim,
+                        lb = c(0, 1/2000),
+                        ub = c(2, 1/100),
+                        data = pop_size_test, type = "BH_exp",
+                        opts = list(algorithm = "NLOPT_LN_PRAXIS",                                     
+                                    #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                    maxeval = -1,                                     
+                                    #Minimum printing                                     
+                                    print_level = 0,                                     
+                                    #Set seed                                     
+                                    ranseed = 123)))
+1/test$solution[2]
+```
+
+Now use to optimize real data.
+
+Ricker exponential
+
+```{r}
+(nloptr_praxis_Rickerexp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                           eval_f = generic_optim,
+                                           lb = c(0, 1/2000),
+                                           ub = c(Inf, 1/100),
+                                           data = pop_size_trunc, type = "Ricker_exp",
+                                           opts = list(algorithm = "NLOPT_LN_PRAXIS",                                     
+                                                       #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                       maxeval = -1,                                     
+                                                       #Minimum printing                                     
+                                                       print_level = 0,                                     
+                                                       #Set seed                                     
+                                                       ranseed = 123)))
+paste("K =", 1/nloptr_praxis_Rickerexp$solution[2])
+```
+
+Ricker hyperbolic
+
+```{r}
+(nloptr_praxis_Rickerhyp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                           eval_f = generic_optim,
+                                           lb = c(0, 1/2000),
+                                           ub = c(Inf, 1/100),
+                                           data = pop_size_trunc, type = "Ricker_hyp",
+                                           opts = list(algorithm = "NLOPT_LN_PRAXIS",                                     
+                                                       #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                       maxeval = -1,                                     
+                                                       #Minimum printing                                     
+                                                       print_level = 0,                                     
+                                                       #Set seed                                     
+                                                       ranseed = 123)))
+paste("K =", 1/nloptr_praxis_Rickerhyp$solution[2])
+```
+
+Beverton-Holt exponential
+
+```{r}
+(nloptr_praxis_BHexp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                       eval_f = generic_optim,
+                                       lb = c(0, 1/2000),
+                                       ub = c(Inf, 1/100),
+                                       data = pop_size_trunc, type = "BH_exp",
+                                       opts = list(algorithm = "NLOPT_LN_PRAXIS",                                     
+                                                   #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                   maxeval = -1,                                     
+                                                   #Minimum printing                                     
+                                                   print_level = 0,                                     
+                                                   #Set seed                                     
+                                                   ranseed = 123)))
+paste("K =", 1/nloptr_praxis_BHexp$solution[2])
+```
+
+Beverton-Holt hyperbolic
+
+```{r}
+(nloptr_praxis_BHhyp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                       eval_f = generic_optim,
+                                       lb = c(0, 1/2000),
+                                       ub = c(Inf, 1/100),
+                                       data = pop_size_trunc, type = "BH_hyp",
+                                       opts = list(algorithm = "NLOPT_LN_PRAXIS",                                     
+                                                   #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                   maxeval = -1,                                     
+                                                   #Minimum printing                                     
+                                                   print_level = 0,                                     
+                                                   #Set seed                                     
+                                                   ranseed = 123)))
+paste("K =", 1/nloptr_praxis_BHhyp$solution[2])
+```
+
+Test how sensititive this is to optimizers starting values.
+
+```{r}
+plot_nloptr_praxis <- iterate_optim_all(Rmax = seq(0, 1, 1e-3), K = 1/seq(100, 1000, 100), data = pop_size_trunc,
+                                        optim_fn = nloptr::nloptr,
+                                        lb = c(0, 1/2000),
+                                        ub = c(Inf, 1/100),
+                                        opts = list(algorithm = "NLOPT_LN_PRAXIS",                                     
+                                                    #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                    maxeval = -1,
+                                                    #Found that fixing xtol_abs for Rmax helps with Ricker sensitivity a bit
+                                                    xtol_abs = c(1e-4, 0),
+                                                    #Minimum printing                                     
+                                                    print_level = 0,                                     
+                                                    #Set seed                                     
+                                                    ranseed = 123))
+
+#As expected (from fitting on test data), seems to work much better with BH than Ricker
+plot_iterated_optim_all(plot_nloptr_praxis, k = 10, scales = "free")
+```
+
+Extract best starting parameters to achieve lowest MSE
+
+```{r}
+plot_nloptr_praxis_best <- plot_nloptr_praxis %>% 
+  group_by(type) %>% 
+  filter(MSE == min(MSE)) %>% 
+  slice(1) %>% 
+  rowwise() %>% 
+  mutate(y = list(aggregate_mod(N = plot_range, Rmax = optRmax, K = 1/optK, type = type)),
+         x = list(plot_range),
+         opt = "NLOPTR_PRAXIS") %>% 
+  ungroup()
+```
+
+## nloptr Nelder-Mead
+
+First, test it works on data where we know the values. Try this for Ricker, Beverton-Holt, and Shepherd. Just use exponential form of BH and Ricker, should be comparable.
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Failing with Ricker...
+(test <- nloptr::nloptr(x0 = c(0, 1/200),
+                        eval_f = generic_optim,
+                        lb = c(0, 1/2000),
+                        ub = c(2, 1/100),
+                        data = pop_size_test, type = "Ricker_exp",
+                        opts = list(algorithm = "NLOPT_LN_NELDERMEAD",                                     
+                                    #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                    maxeval = -1,
+                                    #Minimum printing                                     
+                                    print_level = 0,                                     
+                                    #Set seed                                     
+                                    ranseed = 123)))
+1/test$solution[2]
+```
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Looks ok
+(test <- nloptr::nloptr(x0 = c(0, 1/200),
+                        eval_f = generic_optim,
+                        lb = c(0, 1/2000),
+                        ub = c(2, 1/100),
+                        data = pop_size_test, type = "BH_exp",
+                        opts = list(algorithm = "NLOPT_LN_NELDERMEAD",                                     
+                                    #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                    maxeval = -1,                                     
+                                    #Minimum printing                                     
+                                    print_level = 0,                                     
+                                    #Set seed                                     
+                                    ranseed = 123)))
+1/test$solution[2]
+```
+
+Now use to optimize real data.
+
+Ricker exponential
+
+```{r}
+(nloptr_neldermead_Rickerexp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                               eval_f = generic_optim,
+                                               lb = c(0, 1/2000),
+                                               ub = c(Inf, 1/100),
+                                               data = pop_size_trunc, type = "Ricker_exp",
+                                               opts = list(algorithm = "NLOPT_LN_NELDERMEAD",                                     
+                                                           #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                           maxeval = -1,                                     
+                                                           #Minimum printing                                     
+                                                           print_level = 0,                                     
+                                                           #Set seed                                     
+                                                           ranseed = 123)))
+paste("K =", 1/nloptr_neldermead_Rickerexp$solution[2])
+```
+
+Ricker hyperbolic
+
+```{r}
+(nloptr_neldermead_Rickerhyp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                               eval_f = generic_optim,
+                                               lb = c(0, 1/2000),
+                                               ub = c(Inf, 1/100),
+                                               data = pop_size_trunc, type = "Ricker_hyp",
+                                               opts = list(algorithm = "NLOPT_LN_NELDERMEAD",                                     
+                                                           #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                           maxeval = -1,                                     
+                                                           #Minimum printing                                     
+                                                           print_level = 0,                                     
+                                                           #Set seed                                     
+                                                           ranseed = 123)))
+paste("K =", 1/nloptr_neldermead_Rickerhyp$solution[2])
+```
+
+Beverton-Holt exponential
+
+```{r}
+(nloptr_neldermead_BHexp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                           eval_f = generic_optim,
+                                           lb = c(0, 1/2000),
+                                           ub = c(Inf, 1/100),
+                                           data = pop_size_trunc, type = "BH_exp",
+                                           opts = list(algorithm = "NLOPT_LN_NELDERMEAD",                                     
+                                                       #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                       maxeval = -1,                                     
+                                                       #Minimum printing                                     
+                                                       print_level = 0,                                     
+                                                       #Set seed                                     
+                                                       ranseed = 123)))
+paste("K =", 1/nloptr_neldermead_BHexp$solution[2])
+```
+
+Beverton-Holt hyperbolic
+
+```{r}
+(nloptr_neldermead_BHhyp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                           eval_f = generic_optim,
+                                           lb = c(0, 1/2000),
+                                           ub = c(Inf, 1/100),
+                                           data = pop_size_trunc, type = "BH_hyp",
+                                           opts = list(algorithm = "NLOPT_LN_NELDERMEAD",                                     
+                                                       #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                       maxeval = -1,                                     
+                                                       #Minimum printing                                     
+                                                       print_level = 0,                                     
+                                                       #Set seed                                     
+                                                       ranseed = 123)))
+paste("K =", 1/nloptr_neldermead_BHhyp$solution[2])
+```
+
+Test how sensititive this is to optimizers starting values.
+
+```{r}
+plot_nloptr_neldermead <- iterate_optim_all(Rmax = seq(0, 1, 1e-3), K = 1/seq(100, 1000, 100), data = pop_size_trunc,
+                                            optim_fn = nloptr::nloptr,
+                                            lb = c(0, 1/2000),
+                                            ub = c(Inf, 1/100),
+                                            opts = list(algorithm = "NLOPT_LN_NELDERMEAD",                                     
+                                                        #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                        maxeval = -1,
+                                                        #Found that fixing xtol_abs helps a bit with Ricker sensitivity to starting vals
+                                                        xtol_abs = c(1e-4, 0),
+                                                        #Minimum printing                                     
+                                                        print_level = 0,                                     
+                                                        #Set seed                                     
+                                                        ranseed = 123))
+
+#Again, works much better for BH than Ricker
+plot_iterated_optim_all(plot_nloptr_neldermead, k = 10)
+```
+
+Extract best starting parameters to achieve lowest MSE
+
+```{r}
+plot_nloptr_neldermead_best <- plot_nloptr_neldermead %>% 
+  group_by(type) %>% 
+  filter(MSE == min(MSE)) %>% 
+  rowwise() %>% 
+  mutate(y = list(aggregate_mod(N = plot_range, Rmax = optRmax, K = 1/optK, type = type)),
+         opt = "NLOPTR_NELDERMEAD") %>% 
+  ungroup()
+```
+
+## nloptr Sbplx
+
+First, test it works on data where we know the values. Try this for Ricker, Beverton-Holt, and Shepherd. Just use exponential form of BH and Ricker, should be comparable.
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Looks ok
+(test <- nloptr::nloptr(x0 = c(0, 1/200),
+                        eval_f = generic_optim,
+                        lb = c(0, 1/2000),
+                        ub = c(2, 1/100),
+                        data = pop_size_test, type = "Ricker_exp",
+                        opts = list(algorithm = "NLOPT_LN_SBPLX",                                     
+                                    #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                    maxeval = -1,                                     
+                                    #Minimum printing                                     
+                                    print_level = 0,                                     
+                                    #Set seed                                     
+                                    ranseed = 123)))
+1/test$solution[2]
+```
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Looks ok
+(test <- nloptr::nloptr(x0 = c(0, 1/200),
+                        eval_f = generic_optim,
+                        lb = c(0, 1/2000),
+                        ub = c(2, 1/100),
+                        data = pop_size_test, type = "BH_exp",
+                        opts = list(algorithm = "NLOPT_LN_SBPLX",                                     
+                                    #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                    maxeval = -1,                                     
+                                    #Minimum printing                                     
+                                    print_level = 0,                                     
+                                    #Set seed                                     
+                                    ranseed = 123)))
+1/test$solution[2]
+```
+
+Now use to optimize real data.
+
+Ricker exponential
+
+```{r}
+(nloptr_sbplx_Rickerexp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                          eval_f = generic_optim,
+                                          lb = c(0, 1/2000),
+                                          ub = c(Inf, 1/100),
+                                          data = pop_size_trunc, type = "Ricker_exp",
+                                          opts = list(algorithm = "NLOPT_LN_SBPLX",                                     
+                                                      #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                      maxeval = -1,                                     
+                                                      #Minimum printing                                     
+                                                      print_level = 0,                                     
+                                                      #Set seed                                     
+                                                      ranseed = 123)))
+paste("K =", 1/nloptr_sbplx_Rickerexp$solution[2])
+```
+
+Ricker hyperbolic
+
+```{r}
+(nloptr_sbplx_Rickerhyp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                          eval_f = generic_optim,
+                                          lb = c(0, 1/2000),
+                                          ub = c(Inf, 1/100),
+                                          data = pop_size_trunc, type = "Ricker_hyp",
+                                          opts = list(algorithm = "NLOPT_LN_SBPLX",                                     
+                                                      #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                      maxeval = -1,                                     
+                                                      #Minimum printing                                     
+                                                      print_level = 0,                                     
+                                                      #Set seed                                     
+                                                      ranseed = 123)))
+paste("K =", 1/nloptr_sbplx_Rickerhyp$solution[2])
+```
+
+Beverton-Holt exponential
+
+```{r}
+(nloptr_sbplx_BHexp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                      eval_f = generic_optim,
+                                      lb = c(0, 1/2000),
+                                      ub = c(Inf, 1/100),
+                                      data = pop_size_trunc, type = "BH_exp",
+                                      opts = list(algorithm = "NLOPT_LN_SBPLX",                                     
+                                                  #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                  maxeval = -1,                                     
+                                                  #Minimum printing                                     
+                                                  print_level = 0,                                     
+                                                  #Set seed                                     
+                                                  ranseed = 123)))
+paste("K =", 1/nloptr_sbplx_BHexp$solution[2])
+```
+
+Beverton-Holt hyperbolic
+
+```{r}
+(nloptr_sbplx_BHhyp <- nloptr::nloptr(x0 = c(1, 1/500),
+                                      eval_f = generic_optim,
+                                      lb = c(0, 1/2000),
+                                      ub = c(Inf, 1/100),
+                                      data = pop_size_trunc, type = "BH_hyp",
+                                      opts = list(algorithm = "NLOPT_LN_SBPLX",                                     
+                                                  #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                  maxeval = -1,                                     
+                                                  #Minimum printing                                     
+                                                  print_level = 0,                                     
+                                                  #Set seed                                     
+                                                  ranseed = 123)))
+paste("K =", 1/nloptr_sbplx_BHhyp$solution[2])
+```
+
+Test how sensititive this is to optimizers starting values.
+
+```{r}
+plot_nloptr_sbplx <- iterate_optim_all(Rmax = seq(0, 1, 1e-3), K = 1/seq(100, 1000, 100), data = pop_size_trunc,
+                                       optim_fn = nloptr::nloptr,
+                                       lb = c(0, 1/2000),
+                                       ub = c(Inf, 1/100),
+                                       opts = list(algorithm = "NLOPT_LN_SBPLX",                                     
+                                                   #By making maxeval -1 we don't put a limit on number of evaluations                                     
+                                                   maxeval = -1,  
+                                                   #Adjusting xtol_abs for Rmax seems to reduce sensitiivty
+                                                   xtol_abs = c(1e-5, 0),
+                                                   #Minimum printing                                     
+                                                   print_level = 0,                                     
+                                                   #Set seed                                     
+                                                   ranseed = 123))
+
+plot_iterated_optim_all(plot_nloptr_sbplx, k = 10)
+```
+
+Extract best starting parameters to achieve lowest MSE
+
+```{r}
+plot_nloptr_sbplx_best <- plot_nloptr_sbplx %>% 
+  group_by(type) %>% 
+  filter(MSE == min(MSE)) %>% 
+  slice(1) %>% 
+  rowwise() %>% 
+  mutate(y = list(aggregate_mod(N = plot_range, Rmax = optRmax, K = 1/optK, type = type)),
+         x = list(plot_range),
+         opt = "NLOPTR_SBPLX") %>% 
+  ungroup()
+```
+
+## minqa bobyqa
+
+First, test it works on data where we know the values. Try this for Ricker, Beverton-Holt, and Shepherd. Just use exponential form of BH and Ricker, should be comparable.
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Looks ok
+(test <- minqa::bobyqa(c(0, 1/200),
+                       generic_optim,
+                       lower = c(0, 1/2000),
+                       upper = c(2, 1/100),
+                       data = pop_size_test, type = "Ricker_exp"))
+1/test$par[2]
+```
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Looks ok
+(test <- minqa::bobyqa(c(0, 1/200),
+                       generic_optim,
+                       lower = c(0, 1/2000),
+                       upper = c(2, 1/100),
+                       data = pop_size_test, type = "BH_exp"))
+1/test$par[2]
+```
+
+Now use to optimize real data.
+
+Ricker exponential
+
+```{r}
+(minqa_bobyqa_Rickerexp <- minqa::bobyqa(c(0, 1/200),
+                                         generic_optim,
+                                         lower = c(0, 1/2000),
+                                         upper = c(2, 1/100),
+                                         data = pop_size_trunc, type = "Ricker_exp"))
+paste("K =", 1/minqa_bobyqa_Rickerexp$par[2])
+```
+
+Ricker hyperbolic
+
+```{r}
+(minqa_bobyqa_Rickerhyp <- minqa::bobyqa(c(0, 1/200),
+                                         generic_optim,
+                                         lower = c(0, 1/2000),
+                                         upper = c(2, 1/100),
+                                         data = pop_size_trunc, type = "Ricker_hyp"))
+paste("K =", 1/minqa_bobyqa_Rickerhyp$par[2])
+```
+
+Beverton-Holt exponential
+
+```{r}
+(minqa_bobyqa_BHexp <- minqa::bobyqa(c(0, 1/200),
+                                     generic_optim,
+                                     lower = c(0, 1/2000),
+                                     upper = c(2, 1/100),
+                                     data = pop_size_trunc, type = "BH_exp"))
+paste("K =", 1/minqa_bobyqa_BHexp$par[2])
+```
+
+Beverton-Holt hyperbolic
+
+```{r}
+(minqa_bobyqa_BHhyp <- minqa::bobyqa(c(0, 1/200),
+                                     generic_optim,
+                                     lower = c(0, 1/2000),
+                                     upper = c(2, 1/100),
+                                     data = pop_size_trunc, type = "BH_hyp"))
+paste("K =", 1/minqa_bobyqa_BHhyp$par[2])
+```
+
+Test how sensititive this is to optimizers starting values.
+
+```{r}
+#Reduce step sizes because fit takes much longer
+plot_minqa_bobyqa <- iterate_optim_all(Rmax = seq(0, 1, 1e-2), K = 1/seq(100, 1000, 200), data = pop_size_trunc,
+                                       optim_fn = minqa::bobyqa,
+                                       lower = c(0, 1/2000),
+                                       upper = c(Inf, 1/100),
+                                       control = list(rhobeg = 1e-5))
+
+plot_iterated_optim_all(plot_minqa_bobyqa, k = 3)
+```
+
+Extract best starting parameters to achieve lowest MSE
+
+```{r}
+plot_minqa_bobyqa_best <- plot_minqa_bobyqa %>% 
+  group_by(type) %>% 
+  filter(MSE == min(MSE)) %>% 
+  slice(1) %>% 
+  rowwise() %>% 
+  mutate(y = list(aggregate_mod(N = plot_range, Rmax = optRmax, K = 1/optK, type = type)),
+         x = list(plot_range),
+         opt = "MINQA_BOBYQA") %>% 
+  ungroup()
+```
+
+## nlminb
+
+First, test it works on data where we know the values. Try this for Ricker, Beverton-Holt, and Shepherd. Just use exponential form of BH and Ricker, should be comparable.
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Looks ok
+(test <- nlminb(c(0, 1/200),
+                generic_optim,
+                lower = c(0, 1/2000),
+                upper = c(2, 1/100),
+                data = pop_size_test, type = "Ricker_exp"))
+1/test$par[2]
+```
+
+```{r}
+## TEST IT WORKS AS EXPECTED
+#Looks ok
+(test <- nlminb(c(0, 1/200),
+                generic_optim,
+                lower = c(0, 1/2000),
+                upper = c(2, 1/100),
+                data = pop_size_test, type = "BH_exp"))
+1/test$par[2]
+```
+
+Now use to optimize real data.
+
+Ricker exponential
+
+```{r}
+(nlminb_Rickerexp <- nlminb(c(0, 1/200),
+                            generic_optim,
+                            lower = c(0, 1/2000),
+                            upper = c(2, 1/100),
+                            data = pop_size_trunc, type = "Ricker_exp"))
+paste("K =", 1/nlminb_Rickerexp$par[2])
+```
+
+Ricker hyperbolic
+
+```{r}
+(nlminb_Rickerhyp <- nlminb(c(0, 1/200),
+                            generic_optim,
+                            lower = c(0, 1/2000),
+                            upper = c(2, 1/100),
+                            data = pop_size_trunc, type = "Ricker_hyp"))
+paste("K =", 1/nlminb_Rickerhyp$par[2])
+```
+
+Beverton-Holt exponential
+
+```{r}
+(nlminb_BHexp <- nlminb(c(0, 1/200),
+                        generic_optim,
+                        lower = c(0, 1/2000),
+                        upper = c(2, 1/100),
+                        data = pop_size_trunc, type = "BH_exp"))
+paste("K =", 1/nlminb_BHexp$par[2])
+```
+
+Beverton-Holt hyperbolic
+
+```{r}
+(nlminb_BHhyp <- nlminb(c(0, 1/200),
+                        generic_optim,
+                        lower = c(0, 1/2000),
+                        upper = c(2, 1/100),
+                        data = pop_size_trunc, type = "BH_hyp"))
+paste("K =", 1/nlminb_BHhyp$par[2])
+```
+
+Test how sensititive this is to optimizers starting values.
+
+```{r}
+plot_nlminb <- iterate_optim_all(Rmax = seq(0, 1, 1e-3), K = 1/seq(100, 1000, 100), data = pop_size_trunc,
+                                 optim_fn = nlminb,
+                                 lower = c(0, 1/2000),
+                                 upper = c(Inf, 1/100))
+
+plot_iterated_optim_all(plot_nlminb, k = 3)
+```
+
+Extract best starting parameters to achieve lowest MSE
+
+```{r}
+plot_nlminb_best <- plot_nlminb %>% 
+  group_by(type) %>% 
+  filter(MSE == min(MSE)) %>% 
+  slice(1) %>% 
+  rowwise() %>% 
+  mutate(y = list(aggregate_mod(N = plot_range, Rmax = optRmax, K = 1/optK, type = type)),
+         x = list(plot_range),
+         opt = "NLMINB") %>% 
+  ungroup()
+```
+
+# Plot optimised results
+
+How do the different optimizations look like when plotted? To account for the sensitivity to starting parameters, we'll take the estimates of Rmax and K using the starting parameters that led to the lowest MSE.
+
+```{r}
+all_fitted_data <- do.call(what = bind_rows, args = list(plot_nloptr_bobyqa_best,
+                                                         plot_nloptr_cobyla_best,
+                                                         plot_nloptr_lbfgs_best,
+                                                         plot_nloptr_neldermead_best,
+                                                         plot_nloptr_praxis_best,
+                                                         plot_nloptr_sbplx_best,
+                                                         plot_minqa_bobyqa_best,
+                                                         plot_nlminb_best))
+
+(medianK_allopt <- median(all_fitted_data$optK))
+```
+
+How do these values compare to our median of Kt?
+
+```{r}
+if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
+  stop("K data not extracted")
+} else {
+  Kplot_data <- readRDS(here::here("./analysis/data/Kplot_data.RDS"))
+}
+
+all_fitted_data$optK/median(Kplot_data$globalK)
+```
+
+## Extract marginal values
+
+```{r}
+folder <- here::here("./analysis/STEP1_estimate_K/marginal")
+all_files <- list.files(folder, pattern = ".txt", full.names = TRUE)
+
+pb_yr <- progress::progress_bar$new(total = length(all_files))
+
+allsims <- purrr::map_df(.x = all_files,
+                         .f = function(filepath){
+                           
+                           pb_yr$tick()
+                           
+                           basename <- base::basename(filepath)
+                           
+                           readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) %>%
+                             dplyr::mutate(sim = stringr::str_extract(basename, "(?<=_)[0-9]+(?=.txt)"))
+                           
+                         })
+
+estK <- allsims %>% 
+  dplyr::group_by(.data$sim) %>% 
+  dplyr::mutate(start_pop = first(pop_size)) %>% 
+  dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>% 
+  dplyr::summarise(K = median(.data$pop_size),
+                   start_size = first(start_pop))
+
+marginalK_df <- estK %>% 
+  dplyr::summarise(globalK = median(.data$K),
+                   lower = min(.data$K),
+                   upper = max(.data$K))
+```
+
+```{r}
+marginalK_df
+```
+
+```{r}
+all_fitted_data
+```
+
+```{r}
+plot_data <- all_fitted_data %>% 
+  group_by(type) %>% 
+  summarise(mean = mean(optK),
+            min = min(optK),
+            max = max(optK))
+
+plot_data
+```
+
+## PLOT 1: Plot uncertainty in K across all optimizers
+
+```{r}
+marginalK <- marginalK_df$globalK
+minmarginalK <- marginalK_df$lower
+maxmarginalK <- marginalK_df$upper
+
+library(ggtext)
+# library(ggdist) #Wanted to do with ggdist but there's some error that only occurs on serve
+(output <- ggplot() +
+  geom_rect(aes(xmin = minmarginalK, xmax = maxmarginalK, ymin = -Inf, ymax = Inf),
+            fill = "dark grey", alpha = 0.5) +
+  geom_vline(xintercept = marginalK, lty = 2, size = 0.3) +
+  geom_vline(xintercept = medianK_allopt, lty = 9, size = 0.3) +
+  geom_errorbarh(data = plot_data, aes(y = type, xmin = min, xmax = max), height = 0.2,
+                 size = 0.5) +
+  geom_point(data = plot_data, aes(y = type, x = mean), shape = 21, size = 1.25, fill = "dark grey",
+             stroke = 0.25) +
+  geom_richtext(aes(x = marginalK, y = "Ricker_hyp",
+                    label = "Simulated fixed<br>carrying capacity"),
+                hjust = 1, fill = NA, label.colour = NA,
+                vjust = 0, size = 1.75) +
+  geom_richtext(aes(x = medianK_allopt, y = "Ricker_hyp",
+                    label = "Median optimised<br>carrying capacity"),
+                hjust = 0, fill = NA, label.colour = NA,
+                vjust = 0, size = 1.75) +
+  scale_y_discrete(labels = rev(c("Ricker\n(hyperbolic)",
+                                  "Ricker\n(exponential)",
+                                  "Beverton-Holt\n(hyperbolic)",
+                                  "Beverton-Holt\n(exponential)")),
+                   position = "right") +
+  scale_x_continuous(breaks = seq(500, 600, 25)) +
+  labs(x = "Carrying capacity") +
+  coord_fixed(ratio = 5,
+              xlim = c(500, 600), clip = "off") +
+  theme_classic() +
+  theme(axis.line.y = element_blank(),
+        axis.text.y = element_markdown(colour = "black", size = 7,
+                                       hjust = 0),
+        axis.text.x = element_markdown(colour = "black",
+                                       size = 7),
+        axis.ticks.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.title.x = element_markdown(size = 10)))
+
+ggsave(output, filename = here::here("analysis/plots/alternative_K_method_new.png"),
+       width = 8.25, height = 3.75, dpi = 600)
+```
+
+## PLOT 2: Show estimated values for top models
+
+```{r}
+plot_data2 <- all_fitted_data %>% 
+  tidyr::unnest(cols = c(x, y))
+```
+
+```{r}
+#Ricker models
+plot_data_Ricker <- plot_data2 %>% 
+  filter(grepl(type, pattern = "^Ricker")) %>% 
+  #Filter data to just around the focal point ~500
+  filter(x > 450 & x < 550)
+
+ggplot() +
+  geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
+  geom_line(data = plot_data_Ricker, aes(x = x, y = y, group = opt)) +
+  facet_wrap(facets = ~type) +
+  coord_cartesian(xlim = c(450, 550)) +
+  theme_classic()
+```
+
+```{r}
+#Beverton-Holt models
+plot_data_BH <- plot_data2 %>% 
+  filter(grepl(type, pattern = "^BH"))
+
+ggplot() +
+  geom_abline(slope = 1, intercept = 0, lty = 2, linewidth = 0.25) +
+  geom_line(data = plot_data_BH, aes(x = x, y = y, group = opt)) +
+  facet_wrap(facets = ~type) +
+  coord_cartesian(expand = FALSE) +
+  theme_classic()
+```

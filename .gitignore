@@ -1,0 +1,7 @@
+.Rproj.user
+.Rhistory
+.RData
+.Ruserdata
+archive_results
+STEP1_estimate_K/**/*.RDS
+STEP3_supplementary_analysis/**/*.RDS

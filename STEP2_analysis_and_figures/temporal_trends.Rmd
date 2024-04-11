@@ -1,0 +1,718 @@
+---
+title: "Temporal_trend"
+output: html_document
+date: '2022-10-19'
+---
+
+This document includes analysis of all temporal trends in the data. This includes:
+- Absolute population abundance
+- Carrying capacity
+- Sex ratio
+- Age ratio
+
+# Prepare workspace
+
+Load required packages
+
+```{r pkg}
+library(ggplot2)
+library(hyenaR)
+library(dplyr)
+library(here)
+library(spaMM)
+spaMM.options(nb_cores=10) ## CHECK WITH htop BEFORE USING TOO MANY
+library(doSNOW)
+library(DHARMa)
+library(lubridate)
+```
+
+Define which simulation type we're using
+
+```{r params}
+start_year  <- 1997
+end_year    <- 2021
+scale <- "year"
+```
+
+# Extract data
+
+Extract estimated K
+
+```{r k_data}
+## Time-varying carrying capacity (Kt) 
+if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
+  ## EXTRACT ESTIMATED K
+  years <- start_year:end_year
+  
+  pb_yr <- progress::progress_bar$new(total = length(years))
+  
+  Kplot_data <- purrr::map_df(.x = years,
+                              .f = function(year){
+                                
+                                pb_yr$tick()
+                                
+                                txt_files <- list.files(here(paste0("./analysis/STEP1_estimate_K/", year)),
+                                                        pattern = ".txt", full.names = TRUE)
+                                
+                                allsims <- purrr::map_df(.x = txt_files,
+                                                         .f = function(filepath){
+                                                           
+                                                           readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) %>%
+                                                             dplyr::mutate(sim = stringr::str_extract(filepath, "(?<=_)[0-9]+(?=.txt)"))
+                                                           
+                                                         })
+                                
+                                estK <- allsims %>% 
+                                  dplyr::group_by(.data$sim) %>% 
+                                  dplyr::mutate(start_pop = first(pop_size)) %>% 
+                                  dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>% 
+                                  dplyr::summarise(K = median(.data$pop_size),
+                                                   start_size = first(start_pop))
+                                
+                                plot_data <- estK %>% 
+                                  dplyr::summarise(year = year,
+                                                   globalK = median(.data$K),
+                                                   lower = min(.data$K),
+                                                   upper = max(.data$K),
+                                                   points = list(data.frame(pop_size = .data$K,
+                                                                            start_pop = .data$start_size)))
+                                
+                                return(plot_data)
+                                
+                              })
+  
+  saveRDS(Kplot_data, here::here("./analysis/data/Kplot_data.RDS"))
+} else {
+  Kplot_data <- readRDS(here::here("./analysis/data/Kplot_data.RDS"))
+}
+
+```
+
+Extract real pop data over time at 1 month and 6mo intervals.
+
+```{r N_data}
+if (scale == "year"){
+  real_pop <- readRDS(here::here("./analysis/data/Nplot_data.RDS"))  
+} else if (scale == "month"){
+  real_pop <- readRDS(here::here("./analysis/data/Nplot_data_month.RDS")) 
+}
+```
+
+Prepare sex and age ratio data
+
+```{r N_data_separate}
+### GENERATED IN STEP0_prepare_data/demographic_data.R
+real_pop_separate <- readRDS(here::here("./analysis/data/Nplot_data_separate_1month.RDS"))
+
+### Calculate sex ratio (male/all females)
+ratios <- real_pop_separate %>% 
+  mutate(sex_ratio = ad_male/(ad_male + ad_fem),
+         age_ratio = young/(young + ad_male + ad_fem)) %>% 
+  tidyr::pivot_longer(cols = sex_ratio:age_ratio)
+```
+
+
+# Population abundance (N)
+
+## Describe growth period
+
+When were adult numbers highest in first growth period?
+
+```{r growthN}
+real_pop_separate %>%
+  mutate(total_ad = ad_male+ad_fem) %>%
+  filter(year(date) < 2015) %>%
+  filter(total_ad == max(total_ad))
+```
+
+What was the rate of growth during this period?
+
+```{r growthrateN}
+slope_data <- real_pop %>% 
+  ## Use 1st May b/c we calculated over whole months
+  ## Numbers are similar.
+  filter(date %in% as.Date(c("1996-05-01", "2012-04-01")))
+
+(max(slope_data$pop_size) - min(slope_data$pop_size))/16
+
+## If we take numbers at exact start date
+(max(slope_data$pop_size) - (119+65))/16
+```
+
+And if we tried to calculate the slope w/ CI for this growth period?
+
+```{r growthNmodel}
+mod_data <- data.frame(date = as.Date("1996-04-01"),
+                       pop_size = fetch_pop_number(main.clans = TRUE, at = find_pop_date.observation.first())) %>% 
+  bind_rows(real_pop) %>% 
+  filter(date %in% seq.Date(as.Date("1996-04-01"),
+                            as.Date("2012-04-01"), "6 month")) %>% 
+  mutate(n = 1:n())
+
+mod <- spaMM::fitme(pop_size ~ n + AR1(1|n), data = mod_data)
+
+summary(mod)
+```
+
+```{r DHARMaN}
+library(DHARMa)
+simresid <- simulateResiduals(mod, n = 1000)
+
+testUniformity(simresid)
+```
+
+```{r}
+summary(mod)
+```
+
+## Fluctuation in N following growth
+
+How can we describe the period after 2012?
+
+```{r}
+post2012_data <- real_pop %>% 
+  ## Use 1st May b/c we calculated over whole months
+  ## Numbers are similar.
+  filter(date > as.Date("2012-04-01"))
+
+median(post2012_data$pop_size)
+
+range(post2012_data$pop_size)
+```
+
+Minimum size during last outbreak.
+
+```{r}
+post2012_data %>% 
+  filter(pop_size == min(pop_size))
+```
+
+# Carrying capacity (K)
+
+## Years of decline
+
+When did K show sharp declines (we define here as <= 80% of previous value)
+
+```{r}
+Kplot_data %>% 
+  filter(year <= end_year) %>% 
+  reframe(prop_change = lead(globalK)/globalK,
+          year = year) %>% 
+  filter(!is.na(prop_change) & prop_change <= 0.8)
+```
+
+## Descriptive stats
+
+Range and SD of K
+
+```{r}
+range(Kplot_data$globalK)
+
+sd(Kplot_data$globalK)
+```
+
+## Kt in full period
+
+Estimate over the full period (because we're not just focusing in growth anymore)
+
+```{r}
+Kplot_data_sub <- Kplot_data %>% 
+  filter(year <= end_year)
+
+poisson_data <- Kplot_data_sub %>% 
+  mutate(globalK = as.integer(globalK))
+```
+
+#### Model 1: Poisson
+
+```{r}
+K_model1 <- fitme(globalK ~ year, data = poisson_data, family = "poisson")
+```
+
+```{r}
+K_model1_resid <- simulateResiduals(K_model1, n = 1000, seed = 123)
+
+plot(K_model1_resid)
+```
+
+QQ-plot is bad.
+
+```{r}
+DHARMa::testDispersion(K_model1_resid)
+```
+
+Major over-dispersion.
+
+```{r}
+acf(residuals(K_model1))
+```
+Temporal auto-correlation not too serious. For parsimony maybe easier to accept this and no need to fit AR1 term (which causes problems)
+
+#### Model 2: Gaussian
+
+Could we achieve the same thing just using Gaussian model?
+
+```{r}
+## Use the same Poisson data for AIC are comparable
+K_model2 <- fitme(globalK ~ year, data = poisson_data, family = "gaussian")
+```
+
+```{r}
+K_model2_resid <- simulateResiduals(K_model2, n = 1000, seed = 123)
+
+plot(K_model2_resid)
+```
+
+Uniformity better, quantiles still a bit messy.
+
+```{r}
+DHARMa::testDispersion(K_model2_resid)
+```
+
+Dispersion issue fixed...
+
+```{r}
+acf(residuals(K_model2))
+```
+
+Temporal auto-correlation seems ok.
+
+#### Model 3: Negative-binomial
+
+```{r}
+K_model3 <- fitme(globalK ~ year, data = poisson_data, family = spaMM::negbin2())
+```
+
+```{r}
+K_model3_resid <- simulateResiduals(K_model3, n = 1000, seed = 123)
+
+plot(K_model3_resid)
+```
+
+Uniformity better, quantiles still a bit messy.
+
+```{r}
+DHARMa::testDispersion(K_model3_resid)
+```
+
+Dispersion issue fixed...
+
+```{r}
+acf(residuals(K_model3))
+```
+Temporal auto-correlation seems not too bad.
+
+#### Compare possible models
+
+```{r}
+do.call(dplyr::bind_rows, purrr::map(.x = list(K_model1, K_model2, K_model3),
+                                     .f = spaMM::AIC.HLfit)) %>% 
+  mutate(model = seq(1:n())) %>% 
+  select(model, everything()) %>% 
+  janitor::clean_names() %>% 
+  arrange(marginal_aic)
+```
+
+Gaussian model is best (slightly better than negbin). We will look at both to see if results are comparable. Gaussian is preferable because it's easier to interpret/present and gives us results that can be compared to different model outcomes for other variables.
+
+#### Model results and CI
+
+##### Gaussian model
+
+LRT to compare model to null
+
+```{r}
+global_mod <- fitme(globalK ~ year, data = poisson_data, family = "gaussian")
+null_mod   <- fitme(globalK ~ 1, data = poisson_data, family = "gaussian")
+
+LRT_result_gaussian <- LRT(global_mod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+data.frame(basic = LRT_result_gaussian$basicLRT$p_value, bartlett = LRT_result_gaussian$BartBootLRT$p_value, bootstrap = LRT_result_gaussian$rawBootLRT$p_value)
+```
+
+Summary of full model
+
+```{r}
+summary(global_mod)
+```
+
+CI of year term
+
+```{r}
+spaMM::confint.HLfit(global_mod, parm = "year", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+Fixef term
+
+```{r}
+fixef(global_mod)[2]
+```
+
+##### Negbin model
+
+LRT to compare model to null
+
+```{r}
+global_mod <- fitme(globalK ~ year + 1, data = poisson_data, family = spaMM::negbin2())
+null_mod   <- fitme(globalK ~ 1, data = poisson_data, family = spaMM::negbin2())
+
+LRT_result_poisson <- LRT(global_mod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+data.frame(basic = LRT_result_poisson$basicLRT$p_value,
+           bartlett = LRT_result_poisson$BartBootLRT$p_value,
+           bootstrap = LRT_result_poisson$rawBootLRT$p_value)
+```
+
+Summary of full model
+
+```{r}
+summary(global_mod)
+```
+
+CI of year term
+
+```{r}
+spaMM::confint.HLfit(global_mod, parm = "year", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+Fixef term
+
+```{r}
+fixef(global_mod)[2]
+```
+
+## Ktc in full period
+
+```{r ktc_data}
+if (file.exists(here::here("./analysis/data/Kplot_clan_data.RDS"))) {
+  Kplot_data_byclan <- readRDS(here::here("./analysis/data/Kplot_clan_data.RDS"))
+} else {
+  
+  ## EXTRACT ESTIMATED
+  years <- start_year:end_year
+  
+  pb_yr <- progress::progress_bar$new(total = length(years))
+  
+  Kplot_data <- purrr::map_df(.x = years,
+                              .f = function(year, folder_name){
+                                
+                                pb_yr$tick()
+                                
+                                txt_files <- list.files(here(paste0("~/data/simulation_results/analysis/STEP1_estimate_K/", year)),
+                                                        pattern = ".txt", full.names = TRUE)
+                                
+                                allsims <- purrr::map_df(.x = txt_files,
+                                                         .f = function(filepath){
+                                                           
+                                                           readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) %>%
+                                                             dplyr::mutate(sim = stringr::str_extract(filepath, "(?<=_)[0-9]+(?=.txt)"))
+                                                           
+                                                         })
+                                
+                                #Remove deaths, mothers, father
+                                allsims_sub <- allsims %>% 
+                                  select(-contains("dead"), -contains("father"), -contains("mother")) %>% 
+                                  tidyr::pivot_longer(cols = A_cubfem:T_dispmale) %>% 
+                                  tidyr::separate(col = name, sep = "_", into = c("clan", "group")) %>% 
+                                  group_by(clan, date, sim) %>% 
+                                  summarise(pop_size = first(pop_size),
+                                            clan_size = sum(value), .groups = "drop") %>% 
+                                  tidyr::pivot_wider(names_from = clan, values_from = clan_size)
+                                
+                                estK <- allsims_sub %>% 
+                                  dplyr::group_by(.data$sim) %>% 
+                                  dplyr::mutate(start_pop = first(pop_size)) %>%
+                                  dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>% 
+                                  dplyr::summarise(across(.cols = pop_size:T, .fns = function(N) replace(median(N, na.rm = TRUE),
+                                                                                                         is.na(median(N, na.rm = TRUE)), 0)),
+                                                   start_size = first(start_pop),
+                                                   year = year)
+                                
+                                return(estK)
+                                
+                              }, folder_name = folder_name)
+  
+  saveRDS(Kplot_data, file = here("./analysis/data/Kplot_clan_data.RDS"))
+}
+
+```
+
+```{r Ktc_plot}
+plot_data <- Kplot_data_byclan %>% 
+  select(sim, A:T, year) %>% 
+  tidyr::pivot_longer(A:T) %>% 
+  group_by(name, year) %>% 
+  summarise(median = as.integer(median(value)),
+            min = min(value),
+            max = max(value)) %>% 
+  arrange(name, year) %>% 
+  mutate(n = 1:n())
+
+ggplot(data = plot_data) +
+  geom_line(aes(x =year, y = median)) +
+  geom_point(aes(x =year, y = median)) +
+  facet_wrap(facets = ~name)
+```
+
+```{r Ktc_gaussian}
+## Fit gaussian models for comparison
+## Gaussian is easiest fit and can be compared with other mods.
+K_model_perclan_gaussian <- fitme(median ~ year:name + name + AR1(1|n), data = plot_data, family = "gaussian")
+
+```
+
+```{r DHARMaKtc}
+K_model_perclan_gaussian_resid <- simulateResiduals(K_model_perclan_gaussian, n = 1000, seed = 123)
+
+plot(K_model_perclan_gaussian_resid)
+```
+
+Uniformity better, quantiles still a bit messy.
+
+```{r}
+DHARMa::testDispersion(K_model_perclan_gaussian_resid)
+```
+
+Dispersion issue fixed...
+
+```{r}
+acf(residuals(K_model_perclan_gaussian_resid))
+```
+
+```{r}
+summary(K_model_perclan_gaussian)
+```
+
+```{r LRT_Ktc}
+global_mod <- fitme(median ~ year:name + name + AR1(1|n), data = plot_data, family = "gaussian")
+null_mod   <- fitme(median ~ name + AR1(1|n), data = plot_data, family = "gaussian")
+
+## Need to bootstrap this, it takes some time
+LRT(global_mod, null_mod)
+# data.frame(basic = LRT_result_gaussian$basicLRT$p_value, bartlett = LRT_result_gaussian$BartBootLRT$p_value, bootstrap = LRT_result_gaussian$rawBootLRT$p_value)
+```
+
+CI of year term
+
+```{r}
+spaMM::confint.HLfit(global_mod, parm = "year:nameA", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(global_mod, parm = "year:nameE", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(global_mod, parm = "year:nameF", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(global_mod, parm = "year:nameL", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(global_mod, parm = "year:nameM", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(global_mod, parm = "year:nameN", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(global_mod, parm = "year:nameS", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(global_mod, parm = "year:nameT", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+## Kt in growth period
+
+```{r}
+K_model_growthperiod <- fitme(globalK ~ year, data = poisson_data %>% filter(year <= 2012), family = "gaussian")
+null_mod <- fitme(globalK ~ 1, data = poisson_data %>% filter(year <= 2012), family = "gaussian")
+
+LRT(K_model_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+```
+
+```{r}
+summary(K_model_growthperiod)
+```
+
+```{r}
+confint(K_model_growthperiod, parm = "year", boot_args = list(nsim = 999, nb_cores = 10, seed = 123))
+```
+
+## Ktc in growth period
+
+```{r}
+K_model_perclan_growthperiod <- fitme(median ~ year:name + name + AR1(1|n),
+                                      data = plot_data %>% filter(year <= 2012), family = "gaussian")
+
+null_mod <- fitme(median ~ name + AR1(1|n),
+                  data = plot_data %>% filter(year <= 2012), family = "gaussian")
+
+LRT(K_model_perclan_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+```
+
+```{r}
+summary(K_model_perclan_growthperiod)
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameA", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameE", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameF", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameL", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameM", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameN", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameS", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameT", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+## Sex ratio
+
+Descriptive stats
+
+```{r}
+real_pop_separate %>% 
+  mutate(sexratio = ad_male/(ad_male + ad_fem)) %>% 
+  summarise(median = median(sexratio),
+            min = min(sexratio),
+            max = max(sexratio))
+```
+
+### Sex ratio mod (binomial)
+
+Do this at every 6 months to be comparable
+
+```{r}
+ratio_data <- real_pop_separate %>% 
+  filter(lubridate::month(date) %in% c(1, 7)) %>% 
+  mutate(n = 1:n())
+sexratio_mod <- fitme(cbind(ad_male, ad_fem) ~ n, data = ratio_data, family = "binomial")
+```
+
+```{r}
+sexratio_residuals <- DHARMa::simulateResiduals(sexratio_mod, n = 1000, seed = 123)
+plot(sexratio_residuals)
+```
+
+```{r}
+testTemporalAutocorrelation(sexratio_residuals, time = 1:nrow(ratio_data))
+```
+
+### Sex ratio mod AR1 (binomial)
+
+Do this at every 6 months to be comparable
+
+```{r}
+sexratio_mod2 <- fitme(cbind(ad_male, ad_fem) ~ n + AR1(1|n), data = ratio_data, family = "binomial")
+summary(sexratio_mod2)
+```
+
+```{r}
+sexratio2_residuals <- DHARMa::simulateResiduals(sexratio_mod2, n = 1000, seed = 123)
+## Residual quantiles not great, but residuals ok w/ uniformity test
+## Not sure there's much to do here when using model with so few points!
+plot(sexratio2_residuals)
+```
+
+
+```{r}
+acf(residuals(sexratio_mod2))
+```
+
+```{r}
+global_mod <- fitme(cbind(ad_male, ad_fem) ~ n + AR1(1|n), data = ratio_data, family = "binomial")
+null_mod   <- fitme(cbind(ad_male, ad_fem) ~ AR1(1|n), data = ratio_data, family = "binomial")
+
+## Fails with bootstrap...is it because we're using cbind?!
+LRT(global_mod, null_mod)
+```
+
+```{r}
+spaMM::confint.HLfit(global_mod, parm = "n", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+## Age ratio
+
+Descriptive stats
+
+```{r}
+real_pop_separate %>% 
+  mutate(sexratio = young/(young + ad_male + ad_fem)) %>% 
+  summarise(median = median(sexratio),
+            min = min(sexratio),
+            max = max(sexratio))
+```
+
+### Age ratio mod (binomial)
+
+Do this at every 6 months to be comparable
+
+```{r}
+ageratio_mod <- fitme(cbind(young, ad_male + ad_fem) ~ n, data = ratio_data, family = "binomial")
+```
+
+```{r}
+ageratio_residuals <- DHARMa::simulateResiduals(ageratio_mod, n = 1000, seed = 123)
+plot(ageratio_residuals)
+```
+
+
+```{r}
+testTemporalAutocorrelation(ageratio_residuals, time = 1:nrow(ratio_data))
+```
+
+### Age ratio mod AR1 (binomial)
+
+Do this at every 6 months to be comparable
+
+```{r}
+ageratio_mod2 <- fitme(cbind(young, ad_male + ad_fem) ~ n + AR1(1|n), data = ratio_data, family = "binomial")
+summary(ageratio_mod2)
+```
+
+```{r}
+ageratio2_residuals <- DHARMa::simulateResiduals(ageratio_mod2, n = 1000, seed = 123)
+## AGE RATIO MODEL IS MUCH BETTER FIT
+plot(ageratio2_residuals)
+```
+
+```{r}
+acf(residuals(ageratio_mod2))
+```
+
+```{r}
+global_mod <- fitme(cbind(young, ad_male + ad_fem) ~ n + AR1(1|n), data = ratio_data, family = "binomial")
+null_mod   <- fitme(cbind(young, ad_male + ad_fem) ~ AR1(1|n), data = ratio_data, family = "binomial")
+
+## Fails with bootstrap, because we're using cbind?
+LRT(global_mod, null_mod)
+```
+
+```{r}
+spaMM::confint.HLfit(global_mod, parm = "n", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+

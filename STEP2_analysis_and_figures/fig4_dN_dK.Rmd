@@ -1,0 +1,624 @@
+---
+title: "dN_correlates"
+output: html_document
+date: '2022-10-25'
+---
+
+# Prepare workspace
+
+Load required packages
+
+```{r pkg}
+library(ggplot2)
+library(hyenaR)
+library(dplyr)
+library(here)
+library(spaMM)
+spaMM.options(nb_cores=10) ## CHECK WITH htop BEFORE USING TOO MANY
+library(doSNOW)
+library(DHARMa)
+library(ggrepel)
+library(ggtext)
+```
+
+Define which simulation type we're using
+
+```{r params}
+#Model 2 (polynomial age and random effect of year nested within clan)
+#Simulations have a variety of start points to reduce initialization bias
+start_year  <- 1997
+end_year    <- 2021
+scale       <- "year"
+```
+
+# Extract data
+
+Extract estimated K
+
+```{r k_data}
+if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
+  ## EXTRACT ESTIMATED K
+  years <- start_year:end_year
+  
+  pb_yr <- progress::progress_bar$new(total = length(years))
+  
+  Kplot_data <- purrr::map_df(.x = years,
+                              .f = function(year){
+                                
+                                pb_yr$tick()
+                                
+                                txt_files <- list.files(here(paste0("./analysis/STEP1_estimate_K/", year)),
+                                                        pattern = ".txt", full.names = TRUE)
+                                
+                                allsims <- purrr::map_df(.x = txt_files,
+                                                         .f = function(filepath){
+                                                           
+                                                           readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) %>%
+                                                             dplyr::mutate(sim = stringr::str_extract(filepath, "(?<=_)[0-9]+(?=.txt)"))
+                                                           
+                                                         })
+                                
+                                print(year)
+                                
+                                estK <- allsims %>% 
+                                  dplyr::group_by(.data$sim) %>% 
+                                  dplyr::mutate(start_pop = first(pop_size)) %>% 
+                                  dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>% 
+                                  dplyr::summarise(K = median(.data$pop_size),
+                                                   start_size = first(start_pop))
+                                
+                                plot_data <- estK %>% 
+                                  dplyr::summarise(year = year,
+                                                   globalK = median(.data$K),
+                                                   lower = min(.data$K),
+                                                   upper = max(.data$K),
+                                                   points = list(data.frame(pop_size = .data$K,
+                                                                            start_pop = .data$start_size)))
+                                
+                                return(plot_data)
+                                
+                              })
+  
+  saveRDS(Kplot_data, here::here("./analysis/data/Kplot_data.RDS"))
+} else {
+  Kplot_data <- readRDS(here::here("./analysis/data/Kplot_data.RDS"))
+}
+```
+
+Extract real pop data over time
+
+```{r N_data}
+### GENERATED IN STEP0_prepare_data/demographic_data.R
+if (scale == "month") {
+  real_pop <- readRDS(here::here("./analysis/data/Nplot_data_month.RDS"))
+} else if (scale == "year") {
+  real_pop <- readRDS(here::here("./analysis/data/Nplot_data_year.RDS"))
+}
+
+```
+
+Prep data. We want to calculate different values of dK by comparing all estimates of K with all others in the next time step.
+
+```{r}
+
+Kplot_data_raw <- Kplot_data %>% 
+  tidyr::unnest(cols = points)
+
+```
+
+Now that we have all the K data, we can estimate the change in K from 1 year to another. To include uncertainty, we compare all possible combos of K estimates from t and t + 1.
+
+```{r}
+
+#Only go to 1 year before end year, because we can't get a change in K in the last year
+years <- start_year:(end_year - 1)
+combos <- expand.grid(index1 = 1:12, index2 = 1:12)
+
+dK_data <- purrr::map_df(years, .f = function(year){
+  
+  t_data <- Kplot_data_raw %>% 
+    filter(year == {{year}})
+  
+  t1_data <- Kplot_data_raw %>% 
+    filter(year == {{year}} + 1)
+  
+  dK_vector <- purrr::map_dbl(1:nrow(combos), .f = function(row){
+    
+    current_combo <- combos[row, ]
+    
+    Kt  <- t_data$pop_size[current_combo$index1]
+    Kt1 <- t1_data$pop_size[current_combo$index2]
+    
+    Kt1/Kt
+    
+  })
+  
+  tibble(year = year, dK = dK_vector)
+  
+})
+
+#For every year determine the median, lower and upper values of dK
+dK_data_error <- dK_data %>% 
+  group_by(year) %>% 
+  summarise(value = median(dK, na.rm = TRUE),
+            lower = min(dK, na.rm = TRUE),
+            upper = max(dK, na.rm = TRUE),
+            df = "K")
+
+```
+
+If we are scale of month, do the same thing for N. We pick every possible starting month from Jan - Dec (assume a 1year difference). Otherwise, we just have one value for each year.
+
+```{r}
+
+if (scale == "month") {
+  month_combos <- 1:12
+} else if (scale == "year") {
+  month_combos <- 7
+}
+
+#Only go to 1 before end year, because we can't get a change in K in the last year
+years <- start_year:(end_year - 1)
+
+real_pop <- real_pop %>% 
+  mutate(year = lubridate::year(date))
+
+dN_data <- purrr::map_df(years, .f = function(year){
+  
+  t_data <- real_pop %>% 
+    filter(year == {{year}})
+  
+  t1_data <- real_pop %>% 
+    filter(year == {{year}} + 1)
+  
+  if (year == 1996) {
+    
+    input_combos <- month_combos[month_combos >= 5]
+    
+  } else {
+    
+    input_combos <- month_combos
+    
+  }
+  
+  dN_vector <- purrr::map_dbl(input_combos, .f = function(month){
+    
+    Nt  <- t_data %>% 
+      filter(lubridate::month(date) == month) %>% 
+      pull(pop_size)
+    Nt1 <- t1_data %>% 
+      filter(lubridate::month(date) == month) %>% 
+      pull(pop_size)
+    
+    Nt1/Nt
+    
+  })
+  
+  tibble(year = year, dN = dN_vector)
+  
+})
+
+
+#For every year determine the median, lower and upper values of dK
+dN_data_error <- dN_data %>% 
+  group_by(year) %>% 
+  summarise(value = median(dN, na.rm = TRUE),
+            lower = min(dN, na.rm = TRUE),
+            upper = max(dN, na.rm = TRUE),
+            df = "N")
+
+```
+
+```{r}
+
+plot_data3 <- bind_rows(dK_data_error, dN_data_error) %>% 
+  select(-upper, -lower) %>% 
+  tidyr::pivot_wider(names_from = df, values_from = value, names_prefix = "lambda")
+
+dK_data_errorbar <- dK_data_error %>% 
+  left_join(select(dN_data_error, year, dN = value), by = "year")
+
+dN_data_errorbar <- dN_data_error %>% 
+  left_join(select(dK_data_error, year, dK = value), by = "year")
+
+```
+
+# Correlation test
+
+Pearson and Spearman correlation vals
+
+```{r}
+#Pearson's
+cor.test(dN_data_errorbar$value, dN_data_errorbar$dK, method = "pearson")
+```
+
+```{r}
+#Spearman
+cor.test(dN_data_errorbar$value, dN_data_errorbar$dK, method = "spearman")
+```
+# Distance between N and K
+
+```{r}
+distance_data <- Kplot_data |> 
+  left_join(real_pop, by = "year") |> 
+  #Distance between median K and monthly N
+  mutate(diff = globalK - pop_size) |> 
+  #Summary stats
+  group_by(year) |> 
+  summarise(min = min(diff), max = max(diff), mean = mean(diff))
+
+distance_data
+```
+
+# Identify cases in each quadrant
+
+### Identify cases of K growth and decline
+
+Only consider changes >10%
+
+```{r}
+plot_data3 <- plot_data3 |> 
+  mutate(Kgrowth = case_when(lambdaK >= 1.05 ~ "growth",
+                             lambdaK <= 0.95 ~ "decline",
+                             TRUE ~ "stable"),
+         Ngrowth = case_when(lambdaN >= 1.05 ~ "growth",
+                             lambdaN <= 0.95 ~ "decline",
+                             TRUE ~ "stable"))
+
+table(plot_data3$Kgrowth, plot_data3$Ngrowth)
+```
+
+```{r}
+plot_data3 |> 
+  arrange(Kgrowth, Ngrowth) |> 
+  print(n = Inf)
+```
+
+```{r}
+plot_data3 |> 
+  filter(!(Kgrowth == "growth" & Ngrowth == "growth") & !(Kgrowth == "decline" & Ngrowth == "growth") & !(Kgrowth == "stable" & Ngrowth == "growth") & !year %in% c(2018, 2019)) |> 
+  arrange(Kgrowth, Ngrowth) |> 
+  print(n = Inf)
+```
+
+### When K grew but N didn't
+
+```{r}
+filter(plot_data3, lambdaK > 1 & lambdaN < 1)
+```
+
+### When K shrank but N grew
+
+```{r}
+filter(plot_data3, lambdaK < 1 & lambdaN > 1)
+```
+
+### Both grew
+
+```{r}
+filter(plot_data3, lambdaK > 1 & lambdaN > 1)
+```
+
+### Both decline
+
+```{r}
+filter(plot_data3, lambdaK < 1 & lambdaN < 1)
+```
+
+# PLOT: dN v dK with quadrants
+
+Plot
+
+```{r}
+
+#WITHOUT YEAR LABELS
+
+#Limit the size of the errorbar for 2019 to reach 2 (just to keep axis even)
+dK_data_errorbar <- dK_data_errorbar %>% 
+  mutate(upper_trunc = case_when(upper > 2 ~ 2,
+                                 TRUE ~ upper))
+
+(dN_dK_nolabel <- ggplot() +
+    geom_hline(yintercept = 1, lty = 2) +
+    geom_vline(xintercept = 1, lty = 2) +
+    # geom_segment(aes(x = 1.05, xend = 1.05, y = 1.25, yend = 1.5),
+    #              colour = "black", size = 1,
+    #              arrow = arrow(length = unit(0.03, "npc"))) +
+    #Add horizontal error bar
+    geom_errorbarh(data = dK_data_errorbar, aes(y = dN, xmin = lower, xmax = upper)) +
+    #Manually add segment showing that error for 2019 extends beyond 2
+    # geom_segment(data = filter(dK_data_errorbar, year %in% c(2018, 2019)),
+    #              aes(y = dN, yend = dN, x = lower, xend = upper_trunc), arrow = arrow(length = unit(0.1, "inches"))) +
+    # geom_text(data = filter(dK_data_errorbar, year %in% c(2018, 2019)),
+    #           aes(y = dN - 0.05, x = upper_trunc, label = signif(upper, 2)),
+    #           size = 3) +
+    #Add vertical error bar
+    geom_errorbar(data = dN_data_errorbar, aes(x = dK, ymin = lower, ymax = upper)) +
+    geom_point(data = plot_data3, aes(x = lambdaK, y = lambdaN),
+               shape = 21, colour = "black", fill = "grey50") +
+    geom_point(data = plot_data3 %>% filter(year %in% c(2018, 2019)), aes(x = lambdaK, y = lambdaN),
+               shape = 21, colour = "black", fill = "red", size = 2) +
+    #Add year text
+    geom_text(data = plot_data3 %>% filter(year %in% c(2018, 2019)), aes(x = lambdaK + 0.1, y = lambdaN - 0.04, label = paste(year, year + 1, sep = "-")),
+              force = 7, size = 2.5, max.overlaps = 14) +
+    # geom_text(aes(x = c(0.35, 0.35, 1.6, 1.6, 1.15),
+    #               y = c(0.5, 1.5, 0.5, 1.5, 1.375),
+    #               label = c("Fig2C (end)", "Fig2C (start)", "Allee effect?", "Fig2A", "Fig2B"))) +
+    scale_x_continuous(breaks = seq(0, 2, 0.25)) +
+    labs(x = "\U03BB<sub>K</sub>",
+         y = "\U03BB<sub>N</sub>") +
+    annotate(x = 0.625, y = 0.425, label = "\U2190 Environment<br>degrading   ", geom = "richtext", label.colour = NA,
+             hjust = 1, lineheight = 0, size = 3.5) +
+    annotate(x = 1.375, y = 0.425, label = "Environment \U2192<br>improving  ", geom = "richtext", label.colour = NA,
+             hjust = 0, lineheight = 0, size = 3.5) +
+    annotate(x = -0.055, y = 0.85, label = "\U2190 Population<br>decreasing", geom = "richtext", label.colour = NA,
+             hjust = 1, angle = 90, lineheight = 0, size = 3.5) +
+    annotate(x = -0.055, y = 1.15, label = "Population \U2192<br>increasing", geom = "richtext", label.colour = NA,
+             hjust = 0, angle = 90, lineheight = 0, size = 3.5) +
+    coord_equal(clip = "off",
+                ylim = c(0.6, 1.4),
+                xlim = c(0.2, 1.8)) +
+    theme_classic() +
+    theme(axis.text = element_text(colour = "black", size = 9),
+          plot.margin = margin(b = 15, l = 15, t = 15),
+          axis.title.y = element_markdown(margin = margin(r = 10)),
+          axis.title.x = element_markdown(margin = margin(t = 10))))
+
+ggsave("./analysis/plots/dN_dK_plot_new.png", dpi = 600,
+       width = 6.75,
+       height = 3.75)
+
+```
+
+```{r}
+
+#WITH YEAR LABELS
+library(ggrepel)
+
+(dN_dK_label <- ggplot() +
+    geom_hline(yintercept = 1, lty = 2) +
+    geom_vline(xintercept = 1, lty = 2) +
+    # geom_segment(aes(x = 1.05, xend = 1.05, y = 1.25, yend = 1.5),
+    #              colour = "black", size = 1,
+    #              arrow = arrow(length = unit(0.03, "npc"))) +
+    #Add horizontal error bar
+    geom_errorbarh(data = dK_data_errorbar, aes(y = dN, xmin = lower, xmax = upper)) +
+    #Manually add segment showing that error for 2019 extends beyond 2
+    # geom_segment(data = filter(dK_data_errorbar, year %in% c(2018, 2019)),
+    #              aes(y = dN, yend = dN, x = lower, xend = upper_trunc), arrow = arrow(length = unit(0.1, "inches"))) +
+    # geom_text(data = filter(dK_data_errorbar, year %in% c(2018, 2019)),
+    #           aes(y = dN - 0.05, x = upper_trunc, label = signif(upper, 2)),
+    #           size = 3) +
+    #Add vertical error bar
+    geom_errorbar(data = dN_data_errorbar, aes(x = dK, ymin = lower, ymax = upper)) +
+    geom_point(data = plot_data3, aes(x = lambdaK, y = lambdaN),
+               shape = 21, colour = "black", fill = "grey50") +
+    geom_point(data = plot_data3 %>% filter(year %in% c(2018, 2019)), aes(x = lambdaK, y = lambdaN),
+               shape = 21, colour = "black", fill = "red", size = 2) +
+    #Add year text
+    geom_text_repel(data = plot_data3, aes(x = lambdaK, y = lambdaN, label = year),
+                    force = 7, size = 2.5, max.overlaps = 14) +
+    # geom_text(aes(x = c(0.35, 0.35, 1.6, 1.6, 1.15),
+    #               y = c(0.5, 1.5, 0.5, 1.5, 1.375),
+    #               label = c("Fig2C (end)", "Fig2C (start)", "Allee effect?", "Fig2A", "Fig2B"))) +
+    scale_x_continuous(breaks = seq(0, 2, 0.25)) +
+    labs(x = "\U03BB<sub>K</sub>",
+         y = "\U03BB<sub>N</sub>") +
+    annotate(x = 0.625, y = 0.425, label = "\U2190 Environment<br>degrading   ", geom = "richtext", label.colour = NA,
+             hjust = 1, lineheight = 0, size = 3.5) +
+    annotate(x = 1.375, y = 0.425, label = "Environment \U2192<br>improving  ", geom = "richtext", label.colour = NA,
+             hjust = 0, lineheight = 0, size = 3.5) +
+    annotate(x = -0.055, y = 0.85, label = "\U2190 Population<br>decreasing", geom = "richtext", label.colour = NA,
+             hjust = 1, angle = 90, lineheight = 0, size = 3.5) +
+    annotate(x = -0.055, y = 1.15, label = "Population \U2192<br>increasing", geom = "richtext", label.colour = NA,
+             hjust = 0, angle = 90, lineheight = 0, size = 3.5) +
+    coord_equal(clip = "off",
+                ylim = c(0.6, 1.4),
+                xlim = c(0.2, 1.8)) +
+    theme_classic() +
+    theme(axis.text = element_text(colour = "black", size = 9),
+          plot.margin = margin(b = 15, l = 15, t = 15),
+          axis.title.y = element_markdown(margin = margin(r = 10)),
+          axis.title.x = element_markdown(margin = margin(t = 10))))
+
+ggsave("./analysis/plots/dN_dK_plot_labelled_new.png", dpi = 600,
+       width = 6.75,
+       height = 3.75)
+
+```
+
+### Plot with K-N
+
+As an alternative to plotting change in K and N over time we can look at effect of K-N.
+
+```{r}
+
+## calculate K-N for all values of K and N and take the median
+years <- start_year:(end_year - 1)
+
+real_pop <- real_pop %>% 
+  mutate(year = lubridate::year(date))
+
+KN_data <- purrr::map_df(years, .f = function(year){
+  
+  K_data <- Kplot_data_raw %>% 
+    filter(year == {{year}})
+  
+  N_data <- real_pop %>% 
+    filter(year == {{year}})
+  
+  combos <- expand.grid(Kindex = 1:nrow(K_data),
+                        Nindex = 1:nrow(N_data))
+  
+  KN_vector <- purrr::map_dbl(1:nrow(combos), .f = function(row){
+    
+    K <- K_data$pop_size[combos$Kindex[row]]
+    N <- N_data$pop_size[combos$Nindex[row]]
+    
+    N - K
+    
+  })
+  
+  tibble(year = year, diff = KN_vector)
+  
+})
+
+#We can now include a median, upper and lower value
+plot_data4a <- KN_data %>% 
+  group_by(year) %>% 
+  summarise(median = median(diff),
+            lower = min(diff),
+            upper = max(diff)) %>% 
+  left_join(select(dN_data_error, year, lambdaN = value), by = "year") %>% 
+  left_join(select(Kplot_data, year, K = globalK), by = "year") %>% 
+  filter(!is.na(lambdaN))
+
+```
+
+Prep data
+
+```{r}
+
+#Update to include K-N errorbars
+plot_data4b <- KN_data %>% 
+  group_by(year) %>% 
+  summarise(median = median(diff),
+            lower = min(diff),
+            upper = max(diff)) %>% 
+  left_join(select(dN_data_error, year, lambdaN = value), by = "year") %>% 
+  left_join(select(Kplot_data, year, K = globalK), by = "year") %>% 
+  filter(!is.na(lambdaN))
+
+dN_data_errorbar2 <- dN_data_errorbar %>% 
+  left_join(select(plot_data4b, year, median), by = "year")
+
+```
+
+## Correlation test
+
+Pearson and Spearman correlation vals
+
+```{r}
+#Pearson's
+cor.test(plot_data4b$median, plot_data4b$lambdaN, method = "pearson")
+```
+
+```{r}
+#Spearman
+cor.test(plot_data4b$median, plot_data4b$lambdaN, method = "spearman")
+```
+
+Plot
+
+```{r}
+
+#WITHOUT YEAR LABELS
+(dN_KN_nolabel <- ggplot() +
+   geom_hline(yintercept = 1, lty = 2) +
+   geom_vline(xintercept = 0, lty = 2) +
+   geom_errorbarh(data = plot_data4b, aes(y = lambdaN, xmin = lower, xmax = upper), height = 0) +
+   geom_errorbar(data = dN_data_errorbar2, aes(x = median, ymin = lower, ymax = upper), width = 0) +
+   geom_point(data = plot_data4b, aes(x = median, y = lambdaN),
+              shape = 21, fill = "grey50", colour = "black") + 
+   geom_point(data = plot_data4b %>% filter(year %in% c(2018, 2019)), aes(x = median, y = lambdaN),
+              shape = 21, colour = "black", fill = "red", size = 2) +
+   #Add year text
+   geom_text_repel(data = plot_data4b %>% filter(year %in% c(2018, 2019)), aes(x = median, y = lambdaN, label = year),
+                   force = 7, size = 2.5, max.overlaps = 14) +
+   labs(
+     # title = "Relationship between K-N and \U03BBN",
+     # subtitle = "Errorbars show range of possible values using all estimates of K\nand N in 1st of each month",
+     x = "N - K",
+     y = "\U03BB<sub>N</sub>") +
+   coord_equal(ratio = 250/0.5,
+               clip = "off",
+               ylim = c(0.6, 1.4),
+               xlim = c(-500, 500)) +
+   annotate(x = -150, y = 0.325, label = "Population below<br>carrying capacity", geom = "richtext",
+            label.colour = NA,
+            hjust = 1, lineheight = 0, size = 3.5) +
+   annotate(x = 150, y = 0.325, label = "Population above<br>carrying capacity", geom = "richtext",
+            label.colour = NA,
+            hjust = 0, lineheight = 0, size = 3.5) +
+   annotate(x = -635, y = 0.85, label = "\U2190 Population<br>decreasing", geom = "richtext", label.colour = NA,
+            hjust = 1, angle = 90, lineheight = 0, size = 3.5) +
+   annotate(x = -635, y = 1.15, label = "Population \U2192<br>increasing", geom = "richtext", label.colour = NA,
+            hjust = 0, angle = 90, lineheight = 0, size = 3.5) +
+   theme_classic() +
+   theme(axis.text = element_text(colour = "black", size = 9),
+         plot.margin = margin(b = 15, l = 15, t = 15),
+         axis.title.y = element_markdown(margin = margin(r = 10)),
+         axis.title.x = element_markdown(margin = margin(t = 10))))
+
+ggsave("./analysis/plots/dN_KN_plot_new.png", dpi = 600,
+       width = 6.75,
+       height = 3.75)
+
+```
+
+```{r}
+
+#WITH YEAR LABELS
+(dN_KN_label <- ggplot() +
+   geom_hline(yintercept = 1, lty = 2) +
+   geom_vline(xintercept = 0, lty = 2) +
+   geom_errorbarh(data = plot_data4b, aes(y = lambdaN, xmin = lower, xmax = upper), height = 0) +
+   geom_errorbar(data = dN_data_errorbar2, aes(x = median, ymin = lower, ymax = upper), width = 0) +
+   geom_point(data = plot_data4b, aes(x = median, y = lambdaN),
+              shape = 21, fill = "grey50", colour = "black") + 
+   geom_point(data = plot_data4b %>% filter(year %in% c(2018, 2019)), aes(x = median, y = lambdaN),
+              shape = 21, colour = "black", fill = "red", size = 2) +
+   #Add year text
+   geom_text_repel(data = plot_data4b,
+                   aes(x = median, y = lambdaN, label = year),
+                   force = 7, size = 2.5, max.overlaps = 14) +
+   labs(
+     # title = "Relationship between K-N and \U03BBN",
+     # subtitle = "Errorbars show range of possible values using all estimates of K\nand N in 1st of each month",
+     x = "N - K",
+     y = "\U03BB<sub>N</sub>") +
+   coord_equal(ratio = 250/0.5,
+               clip = "off",
+               ylim = c(0.6, 1.4),
+               xlim = c(-500, 500)) +
+   annotate(x = -150, y = 0.325, label = "Population below<br>carrying capacity", geom = "richtext",
+            label.colour = NA,
+            hjust = 1, lineheight = 0, size = 3.5) +
+   annotate(x = 150, y = 0.325, label = "Population above<br>carrying capacity", geom = "richtext",
+            label.colour = NA,
+            hjust = 0, lineheight = 0, size = 3.5) +
+   annotate(x = -635, y = 0.85, label = "\U2190 Population<br>decreasing", geom = "richtext", label.colour = NA,
+            hjust = 1, angle = 90, lineheight = 0, size = 3.5) +
+   annotate(x = -635, y = 1.15, label = "Population \U2192<br>increasing", geom = "richtext", label.colour = NA,
+            hjust = 0, angle = 90, lineheight = 0, size = 3.5) +
+   theme_classic() +
+   theme(axis.text = element_text(colour = "black", size = 9),
+         plot.margin = margin(b = 15, l = 15, t = 15),
+         axis.title.y = element_markdown(margin = margin(r = 10)),
+         axis.title.x = element_markdown(margin = margin(t = 10))))
+
+ggsave("~/data/simulation_results/analysis/plots/dN_KN_plot_labelled_new.png", dpi = 600,
+       width = 6.75,
+       height = 3.75)
+
+```
+
+Combine plots
+
+```{r}
+library(patchwork)
+dN_dK_nolabel + dN_KN_nolabel + patchwork::plot_layout(ncol = 1, nrow = 2) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
+
+ggsave("./analysis/plots/dN_combo_plot_new.png", dpi = 600,
+       width = 6.75,
+       height = 7.5)
+```
+
+```{r}
+library(patchwork)
+dN_dK_label + dN_KN_label + patchwork::plot_layout(ncol = 1, nrow = 2) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
+
+ggsave("./analysis/plots/dN_combo_plot_labelled_new.png", dpi = 600,
+       width = 6.75,
+       height = 7.5)
+```

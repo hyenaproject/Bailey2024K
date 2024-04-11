@@ -1,0 +1,432 @@
+---
+title: "POM_approach"
+output: html_document
+date: "2023-03-13"
+---
+
+# Create simulated and real dataset
+
+## Simulated outcome
+
+```{r}
+library(SHIM)
+library(dplyr)
+library(hyenaR)
+library(ggplot2)
+library(spaMM)
+
+## GENERATED IN STEP0_prepare_data/model_fit.Rmd
+model_data <- readRDS(here::here("./analysis/data/model_data.RDS"))
+
+## GENERATED IN STEP1_estimate_K/estimateK.R
+modlist <- readRDS(here::here("./analysis/data/model_list.RDS"))
+```
+
+```{r}
+## Run simulation for 313 timesteps (i.e. from 1996 - 2021)
+POM_sim <- simulation_fitrun(number_steps = 320, models = modlist,
+                             return = TRUE, name = "POM",
+                             save_dir = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data",
+                             predictors = list(start_clan = \(ID) ID$clan_name,
+                                               post_dispersal_status = \(ID) if (ID$birth_date == ID$first_date) "philo" else "disp",
+                                               ## If we want a more refined estimate of rank
+                                               rank_category2 = \(ID){
+                                                 natals <- ID$clan_ID$inhabitants_tbl$ID[ID$clan_ID$inhabitants_tbl$natal]
+                                                 ## Will extract for all individuals (even disperser males) so can be NA
+                                                 if (!ID$ID %in% natals) return(NA_character_)
+                                                 std_rank <- seq(1, -1, length.out = length(natals))[which(natals == ID$ID)]
+                                                 if (std_rank >= 1/3) "top" else if (std_rank <= -1/3) "bottom" else "middle"
+                                               }
+                             ),
+                             step_size = 1,
+                             seed = 123)
+```
+
+# Extract demographic info to compare
+
+We do this once for simulated data and once for real data so that we don't have to rebuilt the lifehistory table every time.
+
+## Simulated data
+
+To use the rank functions we need to save a database object (which can be build from .csv files)
+
+```{r}
+all_tbls <- ls(POM_sim)[grepl(ls(POM_sim), pattern = "Sighting|Hyenas|Clans|Rankchanges|Snapshots|Selections")]
+
+for (file in all_tbls){
+  
+  focal_tbl <- POM_sim[[file]]
+  
+  save_name <- tolower(stringr::str_remove(file, pattern = "_tbl"))
+  
+  if (save_name == "sightings") {
+    focal_tbl <- focal_tbl %>% 
+      rename(date = date_time) %>% 
+      mutate(time = "00:00")
+  }
+  
+  if ("sex" %in% colnames(focal_tbl)) {
+    focal_tbl <- focal_tbl %>% 
+      mutate(across(sex, .fns = \(x){
+        case_when(x == "female" ~ 2,
+                  x == "male" ~ 1,
+                  TRUE ~ NA_real_)
+      })) 
+  }
+  
+  write.csv(focal_tbl,
+            file = paste0("~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data/", save_name, ".csv"), row.names = FALSE)
+  
+}
+
+build_package_database.full(db.name = "POM_sim",
+                            input.folder = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data")
+```
+
+```{r}
+# load_package_database.sim(POM_sim)
+load_package_database.full("~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data/POM_sim.sqlite")
+
+```
+
+```{r}
+### LIFESPAN
+lifespan_data_sim <- create_id_starting.table(sex = c("female", "male"),
+                                              from = find_pop_date.observation.first(),
+                                              to = find_pop_date.observation.last(),
+                                              lifestage = "cub", lifestage.overlap = "start") %>%
+  mutate(lifespan = fetch_id_duration.lifespan(ID),
+         sex = fetch_id_sex(ID),
+         source = "sim",
+         rank = fetch_id_rank.birth.std(ID)) %>%
+  # Remove NAs for lifespan = IDs still not dead = right-censored IDs
+  filter(!is.na(lifespan))
+
+### FEMALE LRS
+LRS_data_sim <- create_id_starting.table(sex = "female", lifestage = "adult",
+                                         ## We observed their full adult life
+                                         lifestage.overlap = "within",
+                                         from = find_pop_date.observation.first(),
+                                         to = find_pop_date.observation.last()) %>%
+  mutate(RS = fetch_id_number.offspring(ID = .data$ID, filiation = c("mother_genetic", "mother_social_genetic"), age.mature = 6, unit = "month"),
+         sex = fetch_id_sex(ID),
+         source = "sim",
+         rank = fetch_id_rank.native.std(ID, at = fetch_id_date.at.age(ID, age = 2, unit = "year")))
+
+### FEMALE AGE AT FIRST REPRO
+firstrepro_data_sim <- create_id_offspring.table() %>% 
+  ## Find non-left censored individuals
+  filter(fetch_id_date.birth(parentID) >= find_pop_date.observation.first()) %>% 
+  filter(filiation %in% c("mother_social_genetic", "mother_genetic")) %>% 
+  mutate(cublifespan = fetch_id_duration.lifespan(offspringID, unit = "month"),
+         cubage_lastdate = fetch_id_age(offspringID, at = find_pop_date.observation.last(), unit = "month")) %>% 
+  filter((!is.na(cublifespan) & cublifespan >= 6)|(is.na(cublifespan) & cubage_lastdate >= 6)) %>% 
+  group_by(parentID) %>% 
+  summarise(first_repro = min(birthdate), .groups = "drop") %>% 
+  mutate(age_first_repro = fetch_id_age(parentID, at = first_repro),
+         source = "sim")
+
+### FEMALE IBI
+IBI_data_sim <- create_id_offspring.table() %>% 
+  ## Find non-left censored litters
+  filter(birthdate >= find_pop_date.observation.first()) %>% 
+  filter(filiation %in% c("mother_social_genetic", "mother_genetic")) %>% 
+  mutate(cublifespan = fetch_id_duration.lifespan(offspringID, unit = "month"),
+         cubage_lastdate = fetch_id_age(offspringID, at = find_pop_date.observation.last(), unit = "month")) %>% 
+  filter((!is.na(cublifespan) & cublifespan >= 6)|(is.na(cublifespan) & cubage_lastdate >= 6)) |> 
+  group_by(parentID, birthdate) |> 
+  summarise() %>% 
+  mutate(IBI = as.numeric(lead(birthdate) - birthdate),
+         ## Assume an average month of 31 days
+         IBI_mo = IBI/31,
+         source = "sim") |> 
+  ungroup() |> 
+  filter(!is.na(IBI))
+```
+
+## Real data
+
+```{r}
+load_package_database.full(db.path)
+```
+
+```{r}
+### LIFESPAN
+lifespan_data_real <- create_id_starting.table(sex = c("female", "male"),
+                                               from = find_pop_date.observation.first(),
+                                               to = find_pop_date.observation.last(),
+                                               lifestage = "cub", lifestage.overlap = "start") %>%
+  mutate(lifespan = fetch_id_duration.lifespan(ID),
+         sex = fetch_id_sex(ID),
+         source = "real") %>%
+  # Remove NAs for lifespan = IDs still not dead = right-censored IDs
+  filter(!is.na(lifespan) & lifespan > 0.5)
+
+### FEMALE LRS
+LRS_data_real <- create_id_starting.table(sex = "female", lifestage = "adult",
+                                          ## We observed their full adult life
+                                          lifestage.overlap = "within",
+                                          from = find_pop_date.observation.first(),
+                                          to = find_pop_date.observation.last()) %>%
+  mutate(RS = fetch_id_number.offspring(ID = .data$ID, filiation = c("mother_genetic", "mother_social_genetic"), age.mature = 6, unit = "month"),
+         sex = fetch_id_sex(ID),
+         source = "real",
+         rank = fetch_id_rank.native.std(ID, at = fetch_id_date.at.age(ID, age = 2, unit = "year")))
+
+### FEMALE AGE AT FIRST REPRO
+firstrepro_data_real <- create_id_offspring.table() %>% 
+  ## Find non-left censored individuals
+  filter(fetch_id_date.birth(parentID) >= find_pop_date.observation.first()) %>% 
+  filter(filiation %in% c("mother_social_genetic", "mother_genetic")) %>% 
+  mutate(cublifespan = fetch_id_duration.lifespan(offspringID, unit = "month"),
+         cubage_lastdate = fetch_id_age(offspringID, at = find_pop_date.observation.last(), unit = "month")) %>% 
+  filter((!is.na(cublifespan) & cublifespan >= 6)|(is.na(cublifespan) & cubage_lastdate >= 6)) %>% 
+  group_by(parentID) %>% 
+  summarise(first_repro = min(birthdate), .groups = "drop") %>% 
+  mutate(age_first_repro = fetch_id_age(parentID, at = first_repro),
+         source = "real") %>% 
+  ## A-260 died before first birth...is this a known bug in data? Yes, GH issue #615
+  filter(!is.na(age_first_repro))
+
+### FEMALE IBI
+IBI_data_real <- create_id_offspring.table() %>% 
+  ## Now we only need to consider non left-censored LITTERS
+  filter(birthdate >= find_pop_date.observation.first()) %>% 
+  filter(filiation %in% c("mother_social_genetic", "mother_genetic")) %>% 
+  mutate(cublifespan = fetch_id_duration.lifespan(offspringID, unit = "month"),
+         cubage_lastdate = fetch_id_age(offspringID, at = find_pop_date.observation.last(), unit = "month")) %>% 
+  filter((!is.na(cublifespan) & cublifespan >= 6)|(is.na(cublifespan) & cubage_lastdate >= 6)) |> 
+  group_by(parentID, birthdate) |> 
+  summarise() %>% 
+  mutate(IBI = as.numeric(lead(birthdate) - birthdate),
+         IBI_mo = IBI/31,
+         source = "real") |> 
+  ungroup() |> 
+  filter(!is.na(IBI))
+```
+
+# Plot data
+
+### Lifespan
+
+```{r}
+lifespan_data_sim %>% 
+  group_by(sex) %>% 
+  summarise(mean = mean(lifespan),
+            median = median(lifespan),
+            max = max(lifespan),
+            se = sd(lifespan)/sqrt(n()))
+```
+```{r}
+lifespan_data_real %>% 
+  group_by(sex) %>% 
+  summarise(mean = mean(lifespan),
+            median = median(lifespan),
+            max = max(lifespan),
+            se = sd(lifespan)/sqrt(n()))
+```
+
+```{r}
+ggplot() +
+  geom_histogram(data = lifespan_data_sim, aes(x = lifespan, y = ..count../sum(..count..)), fill = "red", colour = "black", alpha = 0.75,
+                 linewidth = 1, binwidth = 0.5) +
+  geom_histogram(data = lifespan_data_real, aes(x = lifespan, y = ..count../sum(..count..)), fill = "white", colour = "black", alpha = 0.5,
+                 linewidth = 1, binwidth = 0.5) +
+  facet_wrap(facets = ~sex) +
+  labs(x = "Lifespan (years)",
+       y = "Proportion of individuals") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"))
+
+ggsave(filename = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/lifespan.png",
+       width = 9, heigh = 5)
+```
+
+### LRS
+
+```{r}
+LRS_data_sim %>% 
+  summarise(mean = mean(RS),
+            median = median(RS),
+            max = max(RS),
+            se = sd(RS)/sqrt(n()))
+```
+```{r}
+LRS_data_real %>% 
+  summarise(mean = mean(RS),
+            median = median(RS),
+            max = max(RS),
+            se = sd(RS)/sqrt(n()))
+```
+
+```{r}
+ggplot() +
+  geom_histogram(data = LRS_data_sim, aes(x = RS, y = ..count../sum(..count..)), fill = "red", colour = "black", alpha = 0.75,
+                 linewidth = 1, binwidth = 1) +
+  geom_histogram(data = LRS_data_real, aes(x = RS, y = ..count../sum(..count..)), fill = "white", colour = "black", alpha = 0.5,
+                 linewidth = 1, binwidth = 1) +
+  labs(x = "Lifetime reproductive success (number offspring >6mo)",
+       y = "Proportion of individuals") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"))
+
+ggsave(filename = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/LRS.png",
+       width = 9, heigh = 5)
+```
+
+### First repro
+
+```{r}
+firstrepro_data_sim %>% 
+  summarise(mean = mean(age_first_repro),
+            median = median(age_first_repro),
+            max = max(age_first_repro),
+            se = sd(age_first_repro)/sqrt(n()))
+```
+```{r}
+firstrepro_data_real %>% 
+  summarise(mean = mean(age_first_repro),
+            median = median(age_first_repro),
+            max = max(age_first_repro),
+            se = sd(age_first_repro)/sqrt(n()))
+```
+
+```{r}
+ggplot() +
+  geom_histogram(data = firstrepro_data_sim, aes(x = age_first_repro, y = ..count../sum(..count..)), fill = "red", colour = "black", alpha = 0.75,
+                 linewidth = 1, binwidth = 0.5) +
+  geom_histogram(data = firstrepro_data_real, aes(x = age_first_repro, y = ..count../sum(..count..)), fill = "white", colour = "black", alpha = 0.5,
+                 linewidth = 1, binwidth = 0.5) +
+  scale_x_continuous(limits = c(0, NA),
+                     breaks = seq(0, 10, 1)) +
+  labs(x = "Age at first reproduction (years)",
+       y = "Proportion of individuals") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"))
+
+ggsave(filename = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/age_at_first_repro.png",
+       width = 9, heigh = 5)
+```
+
+### IBI
+
+```{r}
+IBI_data_sim %>% 
+  mutate(IBI = IBI_mo) |> 
+  summarise(mean = mean(IBI),
+            median = median(IBI),
+            max = max(IBI),
+            se = sd(IBI)/sqrt(n()))
+```
+```{r}
+IBI_data_real %>% 
+  mutate(IBI = IBI_mo) |> 
+  summarise(mean = mean(IBI),
+            median = median(IBI),
+            max = max(IBI),
+            se = sd(IBI)/sqrt(n()))
+```
+
+```{r}
+ggplot() +
+  geom_histogram(data = IBI_data_sim, aes(x = IBI_mo, y = ..count../sum(..count..)), fill = "red", colour = "black", alpha = 0.75,
+                 linewidth = 1, binwidth = 1) +
+  geom_histogram(data = IBI_data_real, aes(x = IBI_mo, y = ..count../sum(..count..)), fill = "white", colour = "black", alpha = 0.5,
+                 linewidth = 1, binwidth = 1) +
+  labs(x = "Inter-birth interval (months)",
+       y = "Proportion of individuals") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"))
+
+ggsave(filename = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/IBI.png",
+       width = 9, heigh = 5)
+```
+
+## Effects of rank
+
+```{r}
+LRS_rank_sim <- LRS_data_sim  %>% 
+  filter(!is.na(rank)) %>% 
+  mutate(rank_cat = case_when(rank >= 1/3 ~ "1. top",
+                              rank < 1/3 & rank >= -1/3 ~ "2. middle",
+                              TRUE ~ "3. bottom")) %>% 
+  group_by(rank_cat) %>% 
+  summarise(meanLRS = mean(RS),
+            SE = sqrt(mean(RS)/n()),
+            source = "sim")
+
+LRS_rank_real <- LRS_data_real  %>% 
+  filter(!is.na(rank)) %>% 
+  mutate(rank_cat = case_when(rank >= 1/3 ~ "1. top",
+                              rank < 1/3 & rank >= -1/3 ~ "2. middle",
+                              TRUE ~ "3. bottom")) %>% 
+  group_by(rank_cat) %>% 
+  summarise(meanLRS = mean(RS),
+            SE = sqrt(mean(RS)/n()),
+            source = "real")
+
+(plot_data <- dplyr::bind_rows(LRS_rank_sim, LRS_rank_real))
+```
+
+```{r}
+ggplot() +
+  geom_col(data = plot_data,
+           aes(x = rank_cat, y = meanLRS, fill = source,
+               alpha = source), position = position_dodge(width = 0.6),
+           colour = "black") +
+  geom_errorbar(data = plot_data,
+                aes(x = rank_cat,
+                    ymin = meanLRS - SE,
+                    ymax = meanLRS + SE, group = source), position = position_dodge(width = 0.6),
+                colour = "black", width = 0) +
+  scale_fill_manual(values = c("white", "red")) +
+  scale_alpha_manual(values = c(0.5, 0.75)) +
+  labs(x = "Rank category",
+       y = "Lifetime reproductive success (offspring >6mo)") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"),
+        legend.position = "none")
+
+ggsave(filename = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/rank_effect.png",
+       width = 9, heigh = 5)
+```
+
+## Population size
+
+```{r}
+sim_pop_ad <- POM_sim$Rawdata_tbl %>% 
+  filter(age >= 24) %>% 
+  group_by(current_date) %>% 
+  summarise(n = n())
+
+filter(sim_pop_ad, n == max(n))
+```
+
+
+```{r}
+sim_pop_cub <- POM_sim$Rawdata_tbl %>% 
+  filter(age < 24) %>% 
+  group_by(current_date) %>% 
+  summarise(n = n())
+
+filter(sim_pop_cub, n == max(n))
+```
+
+```{r}
+### GENERATED IN STEP0_prepare_data/demographic_data.R
+real_pop <- readRDS(here::here("./analysis/data/Nplot_data_separate_1month.RDS"))
+real_pop <- real_pop %>% 
+  mutate(ad_total = ad_male + ad_fem)
+```
+
+```{r}
+ggplot() +
+  geom_line(data = real_pop, aes(x = date, y = ad_total), colour = "blue") +
+  geom_line(data = sim_pop_ad, aes(x = current_date, y = n), colour = "red")
+```
+
+```{r}
+ggplot() +
+  geom_line(data = real_pop, aes(x = date, y = young), colour = "blue") +
+  geom_line(data = sim_pop_cub, aes(x = current_date, y = n), colour = "red")
+```

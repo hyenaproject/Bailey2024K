@@ -1,0 +1,130 @@
+---
+title: "VR_trends"
+output: html_document
+date: '2022-10-24'
+---
+
+Load required packages
+
+```{r pkg}
+library(ggplot2)
+library(hyenaR)
+library(dplyr)
+library(here)
+library(spaMM)
+library(doSNOW)
+```
+
+Fit models
+
+```{r fit_models}
+## GENERATED IN STEP0_prepare_data/model_fit.Rmd
+model_data <- readRDS(here::here("./analysis/data/model_data.RDS"))
+
+## GENERATED IN STEP1_estimate_K/estimateK.R
+modlist <- readRDS(here::here("./analysis/data/model_list.RDS"))
+```
+
+## LRT of year term in each model.
+
+### F survival
+
+```{r}
+F_surv_mixmod_year <- update(modlist$allF, .~. + year)
+summary(F_surv_mixmod_year)
+```
+
+```{r}
+LRT(F_surv_mixmod_year, modlist$allF)
+```
+
+Here we use likelihood profiling again so we're consistent with analysis of K and N over time that had AR1.
+
+```{r}
+set.seed(123)
+spaMM::confint.HLfit(F_surv_mixmod_year, parm = "year")
+```
+
+### M pre dispersal survival
+
+```{r}
+preMsurv_mixmod_year <- update(modlist$predispM, .~. + year)
+summary(preMsurv_mixmod_year)
+```
+
+```{r}
+LRT(preMsurv_mixmod_year, modlist$predispM)
+```
+
+```{r}
+set.seed(123)
+spaMM::confint.HLfit(preMsurv_mixmod_year, parm = "year")
+```
+
+### M post dispersal survival
+
+```{r}
+postMsurv_mixmod_year <- update(modlist$postdispM, .~. + year)
+summary(postMsurv_mixmod_year)
+```
+
+```{r}
+set.seed(123)
+spaMM::LRT(postMsurv_mixmod_year, modlist$postdispM)
+```
+
+```{r}
+set.seed(123)
+spaMM::confint.HLfit(postMsurv_mixmod_year, parm = "year")
+```
+
+### Twinning
+
+```{r}
+twin_mixmod_year <- update(modlist$twin, .~. + year)
+summary(twin_mixmod_year)
+```
+
+```{r}
+set.seed(123)
+spaMM::LRT(twin_mixmod_year, modlist$twin)
+```
+
+```{r}
+set.seed(123)
+spaMM::confint.HLfit(twin_mixmod_year, parm = "year")
+```
+
+### Non-primiparous repro
+
+```{r}
+nonprimirepro_mixmod_year <- update(modlist$nonprimirepro, .~. + year)
+summary(nonprimirepro_mixmod_year)
+```
+
+```{r}
+set.seed(123)
+spaMM::LRT(nonprimirepro_mixmod_year, modlist$nonprimirepro)
+```
+
+```{r}
+set.seed(123)
+spaMM::confint.HLfit(nonprimirepro_mixmod_year, parm = "year")
+```
+
+### Primiparous repro
+
+```{r}
+primirepro_mixmod_year <- update(modlist$primirepro, .~. + year)
+summary(primirepro_mixmod_year)
+```
+
+```{r}
+set.seed(123)
+spaMM::LRT(primirepro_mixmod_year, modlist$primirepro)
+```
+
+```{r}
+set.seed(123)
+spaMM::confint.HLfit(primirepro_mixmod_year, parm = "year")
+```
