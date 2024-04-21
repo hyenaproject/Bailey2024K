@@ -14,4 +14,5 @@ db.path     <- "../hyena_data/Fisidata_20_04_2024.sqlite"
 ## Starting population file (snapshot of individuals at time 0 for initialising simulations)
 load_package_database.full(db.path)
 start_pop <- get_data.start(db.path = db.path, interactive = FALSE)
-readr::write_excel_csv(start_pop, here("./data/starting_data.csv"))
+## Needs to be an RDS because we have a nested selections columns!
+saveRDS(start_pop, here("./data/starting_data.RDS"))
