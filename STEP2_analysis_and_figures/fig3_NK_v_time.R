@@ -10,93 +10,93 @@ library(ggtext)
 
 ## Define file/folder paths
 start_year  <- 1997
-end_year    <- 2021
+end_year    <- 2022
 
-scale <- "year"
+scale <- "month"
 
 # Extract data
-## Time-varying carrying capacity (Kt) 
-if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
+## Time-varying carrying capacity (Kt)
+if (!file.exists(here::here("./data/Kplot_data.RDS"))) {
   ## EXTRACT ESTIMATED K
   years <- start_year:end_year
-  
+
   pb_yr <- progress::progress_bar$new(total = length(years))
-  
+
   Kplot_data <- purrr::map_df(.x = years,
                               .f = function(year, folder_name){
-                                
+
                                 pb_yr$tick()
-                                
-                                txt_files <- list.files(here(paste0("./analysis/STEP1_estimate_K/", year)),
+
+                                txt_files <- list.files(here(paste0("./STEP1_estimate_K/", year)),
                                                         pattern = ".txt", full.names = TRUE)
-                                
+
                                 allsims <- purrr::map_df(.x = txt_files,
                                                          .f = function(filepath){
-                                                           
+
                                                            readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) %>%
                                                              dplyr::mutate(sim = stringr::str_extract(filepath, "(?<=_)[0-9]+(?=.txt)"))
-                                                           
+
                                                          })
-                                
+
                                 print(year)
-                                
-                                estK <- allsims %>% 
-                                  dplyr::group_by(.data$sim) %>% 
-                                  dplyr::mutate(start_pop = first(pop_size)) %>% 
-                                  dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>% 
+
+                                estK <- allsims %>%
+                                  dplyr::group_by(.data$sim) %>%
+                                  dplyr::mutate(start_pop = first(pop_size)) %>%
+                                  dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>%
                                   dplyr::summarise(K = median(.data$pop_size),
                                                    start_size = first(start_pop))
-                                
-                                plot_data <- estK %>% 
+
+                                plot_data <- estK %>%
                                   dplyr::summarise(year = year,
                                                    globalK = median(.data$K),
                                                    lower = min(.data$K),
                                                    upper = max(.data$K),
                                                    points = list(data.frame(pop_size = .data$K,
                                                                             start_pop = .data$start_size)))
-                                
+
                                 return(plot_data)
-                                
+
                               })
-  
-  saveRDS(Kplot_data, here::here("./analysis/data/Kplot_data.RDS"))
+
+  saveRDS(Kplot_data, here::here("./data/Kplot_data.RDS"))
 } else {
-  Kplot_data <- readRDS(here::here("./analysis/data/Kplot_data.RDS"))
+  Kplot_data <- readRDS(here::here("./data/Kplot_data.RDS"))
 }
 
 ### GENERATED IN STEP0_prepare_data/demographic_data.R
 if (scale == "month") {
-  real_pop <- readRDS(here::here("./analysis/data/Nplot_data_month.RDS"))
+  real_pop <- readRDS(here::here("./data/Nplot_data_month.RDS"))
 } else if (scale == "year") {
-  real_pop <- readRDS(here::here("./analysis/data/Nplot_data_year.RDS"))
+  real_pop <- readRDS(here::here("./data/Nplot_data_year.RDS"))
 }
 
 ## Marginal K (i.e. not time-varying)
-folder <- here::here("./analysis/STEP1_estimate_K/marginal")
+folder <- here::here("./STEP1_estimate_K/marginal")
 all_files <- list.files(folder, pattern = ".txt", full.names = TRUE)
 
 pb_yr <- progress::progress_bar$new(total = length(all_files))
 
 allsims <- purrr::map_df(.x = all_files,
                          .f = function(filepath){
-                           
+
                            pb_yr$tick()
-                           
+
                            basename <- base::basename(filepath)
-                           
+
                            readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) %>%
                              dplyr::mutate(sim = stringr::str_extract(basename, "(?<=_)[0-9]+(?=.txt)"))
-                           
+
                          })
 
-estK <- allsims %>% 
-  dplyr::group_by(.data$sim) %>% 
-  dplyr::mutate(start_pop = first(pop_size)) %>% 
-  dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>% 
+estK <- allsims %>%
+  dplyr::group_by(.data$sim) %>%
+  dplyr::mutate(start_pop = first(pop_size)) %>%
+  dplyr::slice(ceiling(dplyr::n()/2):dplyr::n()) %>%
   dplyr::summarise(K = median(.data$pop_size),
                    start_size = first(start_pop))
 
-plot_data <- estK %>% 
+plot_data <- estK %>%
   dplyr::summarise(globalK = median(.data$K),
                    lower = min(.data$K),
                    upper = max(.data$K))
@@ -112,16 +112,16 @@ harm_fn <- function(x){
   (sum(x^-1)/length(x))^-1
 }
 
-Kplot_data %>% 
-  rowwise() %>% 
-  mutate(harm_mean = harm_fn(points$pop_size)) %>% 
-  ungroup() %>% 
+Kplot_data %>%
+  rowwise() %>%
+  mutate(harm_mean = harm_fn(points$pop_size)) %>%
+  ungroup() %>%
   summarise(harm_harm = harm_fn(harm_mean))
 
 # Plot
 ## K DATA NEEDS DATE COLS SO IT CAN BE PLOTTED
 ## WE NEED TO SHOW THIS IT IS FLAT DURING THE YEAR (i.e. WE ASSUME IT IS FIXED)
-Kplot_data_dates <- Kplot_data %>% 
+Kplot_data_dates <- Kplot_data %>%
   dplyr::mutate(start = lubridate::ymd(paste(.data$year, "01", "01", sep = "-")),
                 end = lubridate::ymd(paste(.data$year + 1, "01", "01", sep = "-"))) %>% tidyr::pivot_longer(cols = c(start, end), values_to = "date")
 
@@ -175,7 +175,7 @@ K_plot <- ggplot() +
                 lineheight = 0.9, fill = NA, label.colour = NA,
                 size = 2.75) +
   geom_richtext(aes(x = as.Date("1996-11-01"),
-                    y = 475),
+                    y = 430),
                 label = "Time-varying<br>carrying capacity",
                 hjust = 0, colour = plotred,
                 lineheight = 0.9, fill = NA, label.colour = NA,
@@ -196,8 +196,8 @@ K_plot <- ggplot() +
            lineend = "round", linejoin = "round") +
   annotate(geom = "segment",
            y = 0, yend = -10,
-           x = seq.Date(as.Date("1995-01-01"), as.Date("2022-01-01"), by = "1 year"),
-           xend = seq.Date(as.Date("1995-01-01"), as.Date("2022-01-01"), by = "1 year"),
+           x = seq.Date(as.Date("1995-01-01"), as.Date("2023-01-01"), by = "1 year"),
+           xend = seq.Date(as.Date("1995-01-01"), as.Date("2023-01-01"), by = "1 year"),
            lineend = "round", linejoin = "round") +
   # labs(title = "Change in N and K over time") +
   theme_classic() +
@@ -211,5 +211,5 @@ K_plot <- ggplot() +
 
 combo_plot <- K_plot + K_boxplot + patchwork::plot_layout(widths = c(17, 1))
 
-ggsave(plot = combo_plot, filename = here::here("analysis/plots/abs_KN_v_time_marginal_new.png"), dpi = 600,
+ggsave(plot = combo_plot, filename = here::here("./plots/abs_KN_v_time_marginal.png"), dpi = 600,
        width = 8, height = 5)
