@@ -20,14 +20,15 @@ library(patchwork)
 library(spaMM)
 library(DHARMa)
 library(ggtext)
+library(SHIM)
 ```
 
 Define which simulation type we're using
 
 ```{r}
-db.path     <- here("../hyena_data/Fisidata_2023_03_07.sqlite")
+db.path     <- here("../hyena_data/Fisidata_20_04_2024.sqlite")
 start_year  <- 1997
-end_year    <- 2021
+end_year    <- 2022
 ```
 
 Load database
@@ -204,6 +205,6 @@ final_output <- mod_data_alldisease_consv |>
   select(lion_density, lion_density_scale, avgprey, avgprey_scale, total_disease_percap, total_disease_percap_scale, roaduse, grazing, clan, year)
 
 readr::write_excel_csv(final_output,
-                       here("./analysis/data/mechanistic_model_data.csv"))
+                       here("./data/mechanistic_model_data.csv"))
 
 ```

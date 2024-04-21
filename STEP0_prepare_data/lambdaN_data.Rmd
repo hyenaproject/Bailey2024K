@@ -19,7 +19,7 @@ Define important variables:
 - Time step (we use 6 months. 1 month has very high temporal auto-correlation)
 
 ```{r}
-db.path     <- "~/data/hyena_data/Fisidata_2023_03_07.sqlite"
+db.path     <- "~/data/hyena_data/Fisidata_20_04_2024.sqlite"
 recruit_age <- 6
 time_step   <- 6
 ```
@@ -31,7 +31,7 @@ load_package_database.full(db.path = db.path)
 # Extract data on population size and recruits.
 
 ```{r}
-pop_size <- data.frame(from = seq(as.Date("1996-07-01"), as.Date("2022-01-01"), by = paste(time_step, "months"))) %>%
+pop_size <- data.frame(from = seq(as.Date("1996-07-01"), as.Date("2023-01-01"), by = paste(time_step, "months"))) %>%
   mutate(to = lead(from)) %>% 
   filter(!is.na(to)) %>% 
   mutate(pop_size = fetch_pop_number(main.clans = TRUE, from = from, to = to)) %>% 
@@ -47,5 +47,5 @@ pop_size <- data.frame(from = seq(as.Date("1996-07-01"), as.Date("2022-01-01"), 
 Save output for reproducibility without .sql file
 
 ```{r}
-readr::write_excel_csv(pop_size, here("./analysis/data/supp_data1_alternativeK_data.csv"))
+readr::write_excel_csv(pop_size, here("./data/supp_data1_alternativeK_data.csv"))
 ```
