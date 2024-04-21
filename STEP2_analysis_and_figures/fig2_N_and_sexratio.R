@@ -6,46 +6,48 @@ library(patchwork)
 library(dplyr)
 
 start_year  <- 1997
-end_year    <- 2021
-scale <- "year"
+end_year    <- 2022
+scale <- "month"
 
 ## Extract data
-### Population size separated by age and sex 
+### Population size separated by age and sex
 if (scale == "month"){
-  
+
   ### GENERATED IN STEP0_prepare_data/demographic_data.R
-  real_pop_separate <- readRDS(here::here("./analysis/data/Nplot_data_separate_1month.RDS"))
-  
+  real_pop_separate <- readRDS(here::here("./data/Nplot_data_separate_1month.RDS"))
+
   ### Calculate sex ratio (male/all females)
-  ratios <- real_pop_separate %>% 
+  ratios <- real_pop_separate %>%
     dplyr::mutate(sex_ratio = ad_male/(ad_male + ad_fem),
-                  age_ratio = young/(young + ad_male + ad_fem)) %>% 
-    tidyr::pivot_longer(cols = sex_ratio:age_ratio)
-  
+                  age_ratio = young/(young + ad_male + ad_fem)) %>%
+    tidyr::pivot_longer(cols = sex_ratio:age_ratio) |>
+    dplyr::filter(lubridate::year(date) <= end_year)
+
   # PLOT
-  
+
   ## Change in N over time
-  
-  plot_data <- real_pop_separate %>% 
-    tidyr::pivot_longer(cols = young:ad_fem) %>% 
+
+  plot_data <- real_pop_separate %>%
+    tidyr::pivot_longer(cols = young:ad_fem) %>%
     #Remove unknown sex (small and is not detectable on plot)
-    # filter(name != "ad_unk") %>% 
+    # filter(name != "ad_unk") %>%
     dplyr:::mutate(name = factor(name, levels = c("young", "ad_male", "ad_fem")),
-                   adult_edge = name != "ad_fem")
-  
-  end_vals <- plot_data %>% 
-    group_by(name) %>% 
-    slice(n()) %>% 
-    mutate(grp = grepl(name, pattern = "ad_")) %>% 
-    group_by(grp) %>% 
+                   adult_edge = name != "ad_fem") |>
+    dplyr::filter(lubridate::year(date) <= end_year)
+
+  end_vals <- plot_data %>%
+    group_by(name) %>%
+    slice(n()) %>%
+    mutate(grp = grepl(name, pattern = "ad_")) %>%
+    group_by(grp) %>%
     summarise(date = first(date),
               value = sum(value))
-  
-  sex_vals <- plot_data %>% 
-    group_by(name) %>% 
-    slice(n() - 10) %>% 
+
+  sex_vals <- plot_data %>%
+    group_by(name) %>%
+    slice(n() - 10) %>%
     filter(name != "young")
-  
+
   N_plot <- ggplot(data = plot_data) +
     geom_area(aes(x = date, y = value, fill = name,
                   linewidth = adult_edge), colour = "black") +
@@ -126,16 +128,16 @@ if (scale == "month"){
           axis.text.y = element_text(colour = "black", size = 10, margin = margin(r = 5)),
           axis.title.y = element_text(colour = "black", size = 15, margin = margin(r = 12)),
           plot.margin = margin(r = 30, t = 10, b = 10))
-  
-  ggsave(here::here("./analysis/plots/N_v_time_new.png"), dpi = 600,
+
+  ggsave(here::here("./plots/N_v_time.png"), dpi = 600,
          width = 9, height = 5)
-  
+
   ## Sex and age ratio
-  
-  end_vals <- ratios %>% 
-    group_by(name) %>% 
+
+  end_vals <- ratios %>%
+    group_by(name) %>%
     slice(n())
-  
+
   (ratios_plot <- ggplot() +
       geom_line(data = ratios, aes(x = date, y = value, colour = name, group = name)) +
       annotate(geom = "segment",
@@ -162,8 +164,8 @@ if (scale == "month"){
                y = seq(0, 1, 0.25), yend = seq(0, 1, 0.25),
                lineend = "round", linejoin = "round") +
       ## LABELS
-      geom_text(aes(x = as.Date("2023-10-01"),
-                    y = end_vals$value + c(0, -0.025), colour = end_vals$name),
+      geom_text(aes(x = as.Date("2023-01-01"),
+                    y = end_vals$value + c(-0.07, 0.05), colour = end_vals$name),
                 label = c("Proportion of\njuveniles", "Proportion of\nadult males"), size = 3,
                 hjust = 0.5, lineheight = 0.75) +
       scale_colour_manual(values = c("red", "grey10")) +
@@ -183,52 +185,52 @@ if (scale == "month"){
             axis.text.y = element_text(colour = "black", size = 10, margin = margin(r = 5)),
             axis.title.y = element_text(colour = "black", size = 15, margin = margin(r = 12)),
             plot.margin = margin(r = 30, t = 10, b = 10)))
-  
-  ggsave(here::here("./analysis/plots/popratio_v_time_new.png"), dpi = 600,
+
+  ggsave(here::here("./plots/popratio_v_time.png"), dpi = 600,
          width = 9, height = 5)
-  
+
   N_plot + ratios_plot + patchwork::plot_layout(nrow = 2)
-  
-  ggsave(here::here("./analysis/plots/N_popratio_v_time_new.png"), dpi = 600,
+
+  ggsave(here::here("./plots/N_popratio_v_time.png"), dpi = 600,
          width = 9, height = 8)
-  
+
 } else if (scale == "year"){
-  
+
   ### GENERATED IN STEP0_prepare_data/demographic_data.R
-  real_pop_separate <- readRDS(here::here("./analysis/data/Nplot_data_separate_year.RDS"))
-  
+  real_pop_separate <- readRDS(here::here("./data/Nplot_data_separate_year.RDS"))
+
   ### Calculate sex ratio (male/all females)
-  ratios <- real_pop_separate %>% 
+  ratios <- real_pop_separate %>%
     dplyr::mutate(sex_ratio = ad_male/(ad_male + ad_fem),
-                  age_ratio = young/(young + ad_male + ad_fem)) %>% 
-    tidyr::pivot_longer(cols = sex_ratio:age_ratio) |> 
-    filter(lubridate::year(date) != 2023)
-  
+                  age_ratio = young/(young + ad_male + ad_fem)) %>%
+    tidyr::pivot_longer(cols = sex_ratio:age_ratio) |>
+    dplyr::filter(lubridate::year(date) <= end_year)
+
   # PLOT
-  
+
   ## Change in N over time
-  
-  plot_data <- real_pop_separate %>% 
-    tidyr::pivot_longer(cols = young:ad_fem) %>% 
+
+  plot_data <- real_pop_separate %>%
+    tidyr::pivot_longer(cols = young:ad_fem) %>%
     #Remove unknown sex (small and is not detectable on plot)
-    # filter(name != "ad_unk") %>% 
+    # filter(name != "ad_unk") %>%
     dplyr:::mutate(name = factor(name, levels = c("young", "ad_male", "ad_fem")),
-                   adult_edge = name != "ad_fem") |> 
-    filter(lubridate::year(date) != 2023)
-  
-  end_vals <- plot_data %>% 
-    group_by(name) %>% 
-    slice(n()) %>% 
-    mutate(grp = grepl(name, pattern = "ad_")) %>% 
-    group_by(grp) %>% 
+                   adult_edge = name != "ad_fem") |>
+    filter(lubridate::year(date) <= end_year)
+
+  end_vals <- plot_data %>%
+    group_by(name) %>%
+    slice(n()) %>%
+    mutate(grp = grepl(name, pattern = "ad_")) %>%
+    group_by(grp) %>%
     summarise(date = first(date),
               value = sum(value))
-  
-  sex_vals <- plot_data %>% 
-    group_by(name) %>% 
-    slice(n() - 10) %>% 
+
+  sex_vals <- plot_data %>%
+    group_by(name) %>%
+    slice(n() - 10) %>%
     filter(name != "young")
-  
+
   N_plot <- ggplot(data = plot_data) +
     geom_area(aes(x = date, y = value, fill = name,
                   linewidth = adult_edge), colour = "black") +
@@ -309,16 +311,16 @@ if (scale == "month"){
           axis.text.y = element_text(colour = "black", size = 10, margin = margin(r = 5)),
           axis.title.y = element_text(colour = "black", size = 15, margin = margin(r = 12)),
           plot.margin = margin(r = 30, t = 10, b = 10))
-  
-  ggsave(here::here("./analysis/plots/N_v_time_new.png"), dpi = 600,
+
+  ggsave(here::here("./plots/N_v_time.png"), dpi = 600,
          width = 9, height = 5)
-  
+
   ## Sex and age ratio
-  
-  end_vals <- ratios %>% 
-    group_by(name) %>% 
+
+  end_vals <- ratios %>%
+    group_by(name) %>%
     slice(n())
-  
+
   (ratios_plot <- ggplot() +
       geom_line(data = ratios, aes(x = date, y = value, colour = name, group = name)) +
       annotate(geom = "segment",
@@ -366,13 +368,13 @@ if (scale == "month"){
             axis.text.y = element_text(colour = "black", size = 10, margin = margin(r = 5)),
             axis.title.y = element_text(colour = "black", size = 15, margin = margin(r = 12)),
             plot.margin = margin(r = 30, t = 10, b = 10)))
-  
-  ggsave(here::here("./analysis/plots/popratio_v_time_new.png"), dpi = 600,
+
+  ggsave(here::here("./plots/popratio_v_time.png"), dpi = 600,
          width = 9, height = 5)
-  
+
   N_plot + ratios_plot + patchwork::plot_layout(nrow = 2)
-  
-  ggsave(here::here("./analysis/plots/N_popratio_v_time_new.png"), dpi = 600,
+
+  ggsave(here::here("./plots/N_popratio_v_time.png"), dpi = 600,
          width = 9, height = 8)
-  
+
 }
