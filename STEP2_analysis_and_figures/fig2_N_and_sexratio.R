@@ -109,8 +109,8 @@ if (scale == "month"){
              x = sex_vals$date[1] + 100,
              y = mean(c(0, sex_vals$value[2])),
              label = "FEMALE", hjust = 1, size = 3.5,
-             colour = "grey95") +
-    scale_fill_manual(values = c("grey90", "grey55", "grey20")) +
+             colour = "grey20") +
+    scale_fill_manual(values = rev(c("grey90", "grey55", "grey20"))) +
     scale_linewidth_discrete(range = c(0, 0.75)) +
     scale_x_date(breaks = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 years"),
                  date_labels = "%Y") +
@@ -123,10 +123,10 @@ if (scale == "month"){
     theme(legend.position = "none",
           axis.title.x = element_blank(),
           axis.text.x = element_text(colour = "black",
-                                     margin = margin(t = 10), size = 10),
+                                     margin = margin(t = 10), size = 12),
           axis.ticks = element_blank(),
-          axis.text.y = element_text(colour = "black", size = 10, margin = margin(r = 5)),
-          axis.title.y = element_text(colour = "black", size = 15, margin = margin(r = 12)),
+          axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+          axis.title.y = element_text(colour = "black", size = 17, margin = margin(r = 12)),
           plot.margin = margin(r = 30, t = 10, b = 10))
 
   ggsave(here::here("./plots/N_v_time.png"), dpi = 600,
@@ -180,16 +180,18 @@ if (scale == "month"){
       theme(legend.position = "none",
             axis.title.x = element_blank(),
             axis.text.x = element_text(colour = "black",
-                                       margin = margin(t = 10), size = 10),
+                                       margin = margin(t = 10), size = 12),
             axis.ticks = element_blank(),
-            axis.text.y = element_text(colour = "black", size = 10, margin = margin(r = 5)),
-            axis.title.y = element_text(colour = "black", size = 15, margin = margin(r = 12)),
+            axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+            axis.title.y = element_text(colour = "black", size = 17, margin = margin(r = 12)),
             plot.margin = margin(r = 30, t = 10, b = 10)))
 
   ggsave(here::here("./plots/popratio_v_time.png"), dpi = 600,
          width = 9, height = 5)
 
-  N_plot + ratios_plot + patchwork::plot_layout(nrow = 2)
+  N_plot + ratios_plot + patchwork::plot_layout(nrow = 2) +
+    patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")") &
+    theme(plot.tag.position = c(0.125, 0.975), plot.tag = element_text(size = 17))
 
   ggsave(here::here("./plots/N_popratio_v_time.png"), dpi = 600,
          width = 9, height = 8)
@@ -292,8 +294,8 @@ if (scale == "month"){
              x = sex_vals$date[1] + 100,
              y = mean(c(0, sex_vals$value[2])),
              label = "FEMALE", hjust = 1, size = 3.5,
-             colour = "grey95") +
-    scale_fill_manual(values = c("grey90", "grey55", "grey20")) +
+             colour = "grey20") +
+    scale_fill_manual(values = rev(c("grey90", "grey55", "grey20"))) +
     scale_linewidth_discrete(range = c(0, 0.75)) +
     scale_x_date(breaks = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 years"),
                  date_labels = "%Y") +
@@ -306,10 +308,10 @@ if (scale == "month"){
     theme(legend.position = "none",
           axis.title.x = element_blank(),
           axis.text.x = element_text(colour = "black",
-                                     margin = margin(t = 10), size = 10),
+                                     margin = margin(t = 10), size = 12),
           axis.ticks = element_blank(),
-          axis.text.y = element_text(colour = "black", size = 10, margin = margin(r = 5)),
-          axis.title.y = element_text(colour = "black", size = 15, margin = margin(r = 12)),
+          axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+          axis.title.y = element_text(colour = "black", size = 17, margin = margin(r = 12)),
           plot.margin = margin(r = 30, t = 10, b = 10))
 
   ggsave(here::here("./plots/N_v_time.png"), dpi = 600,
@@ -363,16 +365,19 @@ if (scale == "month"){
       theme(legend.position = "none",
             axis.title.x = element_blank(),
             axis.text.x = element_text(colour = "black",
-                                       margin = margin(t = 10), size = 10),
+                                       margin = margin(t = 10), size = 12),
             axis.ticks = element_blank(),
-            axis.text.y = element_text(colour = "black", size = 10, margin = margin(r = 5)),
-            axis.title.y = element_text(colour = "black", size = 15, margin = margin(r = 12)),
+            axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+            axis.title.y = element_text(colour = "black", size = 17, margin = margin(r = 12)),
             plot.margin = margin(r = 30, t = 10, b = 10)))
 
   ggsave(here::here("./plots/popratio_v_time.png"), dpi = 600,
          width = 9, height = 5)
 
-  N_plot + ratios_plot + patchwork::plot_layout(nrow = 2)
+  N_plot + ratios_plot + patchwork::plot_layout(nrow = 2) +
+    patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")") &
+    theme(plot.tag.position = c(0.125, 0.975), plot.tag = element_text(size = 17))
+
 
   ggsave(here::here("./plots/N_popratio_v_time.png"), dpi = 600,
          width = 9, height = 8)
