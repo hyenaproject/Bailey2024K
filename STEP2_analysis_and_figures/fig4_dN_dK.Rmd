@@ -336,10 +336,12 @@ dK_data_errorbar <- dK_data_errorbar %>%
     geom_errorbar(data = dN_data_errorbar, aes(x = dK, ymin = lower, ymax = upper)) +
     geom_point(data = plot_data3, aes(x = lambdaK, y = lambdaN),
                shape = 21, colour = "black", fill = "grey50") +
-    geom_point(data = plot_data3 %>% filter(year %in% c(2018, 2019)), aes(x = lambdaK, y = lambdaN),
+    geom_point(data = plot_data3 %>% filter(year %in% c(2018, 2019, 2006, 2001)), aes(x = lambdaK, y = lambdaN),
                shape = 21, colour = "black", fill = "red", size = 2) +
     #Add year text
-    geom_text(data = plot_data3 %>% filter(year %in% c(2018, 2019)), aes(x = lambdaK + 0.1, y = lambdaN - 0.04, label = paste(year, year + 1, sep = "-")),
+    geom_text(data = plot_data3 %>% filter(year %in% c(2018, 2019, 2006, 2001)),
+              aes(x = lambdaK + c(-0.075, 0.075, -0.075, 0.075),
+                  y = lambdaN + c(0.04, 0.04, -0.04, -0.04), label = paste(year, year + 1, sep = "-")),
               force = 7, size = 2.5, max.overlaps = 14) +
     # geom_text(aes(x = c(0.35, 0.35, 1.6, 1.6, 1.15),
     #               y = c(0.5, 1.5, 0.5, 1.5, 1.375),
@@ -393,7 +395,7 @@ library(ggrepel)
     geom_errorbar(data = dN_data_errorbar, aes(x = dK, ymin = lower, ymax = upper)) +
     geom_point(data = plot_data3, aes(x = lambdaK, y = lambdaN),
                shape = 21, colour = "black", fill = "grey50") +
-    geom_point(data = plot_data3 %>% filter(year %in% c(2018, 2019)), aes(x = lambdaK, y = lambdaN),
+    geom_point(data = plot_data3 %>% filter(year %in% c(2018, 2019, 2001, 2006)), aes(x = lambdaK, y = lambdaN),
                shape = 21, colour = "black", fill = "red", size = 2) +
     #Add year text
     geom_text_repel(data = plot_data3, aes(x = lambdaK, y = lambdaN, label = year),
@@ -523,7 +525,7 @@ Plot
    geom_point(data = plot_data4b %>% filter(year %in% c(2018, 2019)), aes(x = median, y = lambdaN),
               shape = 21, colour = "black", fill = "red", size = 2) +
    #Add year text
-   geom_text_repel(data = plot_data4b %>% filter(year %in% c(2018, 2019)), aes(x = median, y = lambdaN, label = year),
+   geom_text_repel(data = plot_data4b %>% filter(year %in% c(2018, 2019, 2001, 2006)), aes(x = median, y = lambdaN, label = year),
                    force = 7, size = 2.5, max.overlaps = 14) +
    labs(
      # title = "Relationship between K-N and \U03BBN",
@@ -566,7 +568,7 @@ ggsave(here::here("./plots/dN_KN_plot.png"), dpi = 600,
    geom_errorbar(data = dN_data_errorbar2, aes(x = median, ymin = lower, ymax = upper), width = 0) +
    geom_point(data = plot_data4b, aes(x = median, y = lambdaN),
               shape = 21, fill = "grey50", colour = "black") + 
-   geom_point(data = plot_data4b %>% filter(year %in% c(2018, 2019)), aes(x = median, y = lambdaN),
+   geom_point(data = plot_data4b %>% filter(year %in% c(2018, 2019, 2001, 2006)), aes(x = median, y = lambdaN),
               shape = 21, colour = "black", fill = "red", size = 2) +
    #Add year text
    geom_text_repel(data = plot_data4b,
@@ -607,7 +609,8 @@ Combine plots
 
 ```{r}
 library(patchwork)
-dN_dK_nolabel + dN_KN_nolabel + patchwork::plot_layout(ncol = 1, nrow = 2) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
+dN_dK_nolabel + dN_KN_nolabel + patchwork::plot_layout(ncol = 1, nrow = 2) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")  &
+    theme(plot.tag.position = c(0.125, 0.975), plot.tag = element_text(size = 17))
 
 ggsave(here::here("./plots/dN_combo_plot.png"), dpi = 600,
        width = 6.75,
@@ -616,7 +619,8 @@ ggsave(here::here("./plots/dN_combo_plot.png"), dpi = 600,
 
 ```{r}
 library(patchwork)
-dN_dK_label + dN_KN_label + patchwork::plot_layout(ncol = 1, nrow = 2) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
+dN_dK_label + dN_KN_label + patchwork::plot_layout(ncol = 1, nrow = 2) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")  &
+    theme(plot.tag.position = c(0.125, 0.975), plot.tag = element_text(size = 17))
 
 ggsave(here::here("./plots/dN_combo_plot_labelled.png"), dpi = 600,
        width = 6.75,
