@@ -27,8 +27,8 @@ Define which simulation type we're using
 #Model 2 (polynomial age and random effect of year nested within clan)
 #Simulations have a variety of start points to reduce initialization bias
 start_year  <- 1997
-end_year    <- 2021
-scale       <- "year"
+end_year    <- 2022
+scale       <- "year" ## For this plot, stick with annual change to make it easier to compare
 ```
 
 # Extract data
@@ -36,7 +36,7 @@ scale       <- "year"
 Extract estimated K
 
 ```{r k_data}
-if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
+if (!file.exists(here::here("./data/Kplot_data.RDS"))) {
   ## EXTRACT ESTIMATED K
   years <- start_year:end_year
   
@@ -47,7 +47,7 @@ if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
                                 
                                 pb_yr$tick()
                                 
-                                txt_files <- list.files(here(paste0("./analysis/STEP1_estimate_K/", year)),
+                                txt_files <- list.files(here(paste0("./STEP1_estimate_K/", year)),
                                                         pattern = ".txt", full.names = TRUE)
                                 
                                 allsims <- purrr::map_df(.x = txt_files,
@@ -79,9 +79,9 @@ if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
                                 
                               })
   
-  saveRDS(Kplot_data, here::here("./analysis/data/Kplot_data.RDS"))
+  saveRDS(Kplot_data, here::here("./data/Kplot_data.RDS"))
 } else {
-  Kplot_data <- readRDS(here::here("./analysis/data/Kplot_data.RDS"))
+  Kplot_data <- readRDS(here::here("./data/Kplot_data.RDS"))
 }
 ```
 
@@ -90,9 +90,9 @@ Extract real pop data over time
 ```{r N_data}
 ### GENERATED IN STEP0_prepare_data/demographic_data.R
 if (scale == "month") {
-  real_pop <- readRDS(here::here("./analysis/data/Nplot_data_month.RDS"))
+  real_pop <- readRDS(here::here("./data/Nplot_data_month.RDS"))
 } else if (scale == "year") {
-  real_pop <- readRDS(here::here("./analysis/data/Nplot_data_year.RDS"))
+  real_pop <- readRDS(here::here("./data/Nplot_data_year.RDS"))
 }
 
 ```
@@ -364,7 +364,7 @@ dK_data_errorbar <- dK_data_errorbar %>%
           axis.title.y = element_markdown(margin = margin(r = 10)),
           axis.title.x = element_markdown(margin = margin(t = 10))))
 
-ggsave("./analysis/plots/dN_dK_plot_new.png", dpi = 600,
+ggsave(here::here("./plots/dN_dK_plot.png"), dpi = 600,
        width = 6.75,
        height = 3.75)
 
@@ -421,7 +421,7 @@ library(ggrepel)
           axis.title.y = element_markdown(margin = margin(r = 10)),
           axis.title.x = element_markdown(margin = margin(t = 10))))
 
-ggsave("./analysis/plots/dN_dK_plot_labelled_new.png", dpi = 600,
+ggsave(here::here("./plots/dN_dK_plot_labelled.png"), dpi = 600,
        width = 6.75,
        height = 3.75)
 
@@ -550,7 +550,7 @@ Plot
          axis.title.y = element_markdown(margin = margin(r = 10)),
          axis.title.x = element_markdown(margin = margin(t = 10))))
 
-ggsave("./analysis/plots/dN_KN_plot_new.png", dpi = 600,
+ggsave(here::here("./plots/dN_KN_plot.png"), dpi = 600,
        width = 6.75,
        height = 3.75)
 
@@ -597,7 +597,7 @@ ggsave("./analysis/plots/dN_KN_plot_new.png", dpi = 600,
          axis.title.y = element_markdown(margin = margin(r = 10)),
          axis.title.x = element_markdown(margin = margin(t = 10))))
 
-ggsave("~/data/simulation_results/analysis/plots/dN_KN_plot_labelled_new.png", dpi = 600,
+ggsave(here::here("./plots/dN_KN_plot_labelled.png"), dpi = 600,
        width = 6.75,
        height = 3.75)
 
@@ -609,7 +609,7 @@ Combine plots
 library(patchwork)
 dN_dK_nolabel + dN_KN_nolabel + patchwork::plot_layout(ncol = 1, nrow = 2) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
 
-ggsave("./analysis/plots/dN_combo_plot_new.png", dpi = 600,
+ggsave(here::here("./plots/dN_combo_plot.png"), dpi = 600,
        width = 6.75,
        height = 7.5)
 ```
@@ -618,7 +618,7 @@ ggsave("./analysis/plots/dN_combo_plot_new.png", dpi = 600,
 library(patchwork)
 dN_dK_label + dN_KN_label + patchwork::plot_layout(ncol = 1, nrow = 2) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
 
-ggsave("./analysis/plots/dN_combo_plot_labelled_new.png", dpi = 600,
+ggsave(here::here("./plots/dN_combo_plot_labelled.png"), dpi = 600,
        width = 6.75,
        height = 7.5)
 ```
