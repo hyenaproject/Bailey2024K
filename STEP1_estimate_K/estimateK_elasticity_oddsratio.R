@@ -19,10 +19,10 @@ library(spaMM)
 library(here)
 
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
-model_data <- readRDS(here::here("./analysis/data/model_data.RDS"))
+model_data <- readRDS(here::here("./data/model_data.RDS"))
 
 ## GENERATED IN STEP1_estimate_K/estimateK.R
-modlist <- readRDS(here::here("./analysis/data/model_list.RDS"))
+modlist <- readRDS(here::here("./data/model_list.RDS"))
 
 ## Choose individuals born in 2010
 ## Cohort of individuals with lots of information
@@ -134,7 +134,7 @@ simulation_iterate(start_pops = start_pop_example,
                    ),
                    number_steps = 1200,
                    step_size = 1, models = elasticity_modlist,
-                   save_dir = "./analysis/STEP1_estimate_K/elasticity_oddsratio/femsurv/lower",
+                   save_dir = "./STEP1_estimate_K/elasticity_oddsratio/femsurv/lower",
                    save_size = 60,
                    iterator_seed = 123,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
@@ -165,7 +165,7 @@ simulation_iterate(start_pops = start_pop_example,
                    ),
                    number_steps = 1200,
                    step_size = 1, models = elasticity_modlist,
-                   save_dir = "./analysis/STEP1_estimate_K/elasticity_oddsratio/femsurv/higher",
+                   save_dir = "./STEP1_estimate_K/elasticity_oddsratio/femsurv/higher",
                    save_size = 60,
                    iterator_seed = 123,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
@@ -205,7 +205,7 @@ simulation_iterate(start_pops = start_pop_example,
                    ),
                    number_steps = 1200,
                    step_size = 1, models = elasticity_modlist,
-                   save_dir = "./analysis/STEP1_estimate_K/elasticity_oddsratio/preM/lower",
+                   save_dir = "./STEP1_estimate_K/elasticity_oddsratio/preM/lower",
                    save_size = 60,
                    iterator_seed = 123,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
@@ -236,7 +236,7 @@ simulation_iterate(start_pops = start_pop_example,
                    ),
                    number_steps = 1200,
                    step_size = 1, models = elasticity_modlist,
-                   save_dir = "./analysis/STEP1_estimate_K/elasticity_oddsratio/preM/higher",
+                   save_dir = "./STEP1_estimate_K/elasticity_oddsratio/preM/higher",
                    save_size = 60,
                    iterator_seed = 123,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
@@ -276,7 +276,7 @@ simulation_iterate(start_pops = start_pop_example,
                    ),
                    number_steps = 1200,
                    step_size = 1, models = elasticity_modlist,
-                   save_dir = "./analysis/STEP1_estimate_K/elasticity_oddsratio/postM/lower",
+                   save_dir = "./STEP1_estimate_K/elasticity_oddsratio/postM/lower",
                    save_size = 60,
                    iterator_seed = 123,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
@@ -307,7 +307,7 @@ simulation_iterate(start_pops = start_pop_example,
                    ),
                    number_steps = 1200,
                    step_size = 1, models = elasticity_modlist,
-                   save_dir = "./analysis/STEP1_estimate_K/elasticity_oddsratio/postM/higher",
+                   save_dir = "./STEP1_estimate_K/elasticity_oddsratio/postM/higher",
                    save_size = 60,
                    iterator_seed = 123,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
@@ -349,7 +349,7 @@ simulation_iterate(start_pops = start_pop_example,
                    ),
                    number_steps = 1200,
                    step_size = 1, models = elasticity_modlist,
-                   save_dir = "./analysis/STEP1_estimate_K/elasticity_oddsratio/twin/lower",
+                   save_dir = "./STEP1_estimate_K/elasticity_oddsratio/twin/lower",
                    save_size = 60,
                    iterator_seed = 123,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
@@ -380,7 +380,7 @@ simulation_iterate(start_pops = start_pop_example,
                    ),
                    number_steps = 1200,
                    step_size = 1, models = elasticity_modlist,
-                   save_dir = "./analysis/STEP1_estimate_K/elasticity_oddsratio/twin/higher",
+                   save_dir = "./STEP1_estimate_K/elasticity_oddsratio/twin/higher",
                    save_size = 60,
                    iterator_seed = 123,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
@@ -421,7 +421,7 @@ simulation_iterate(start_pops = start_pop_example,
                    ),
                    number_steps = 1200,
                    step_size = 1, models = elasticity_modlist,
-                   save_dir = "./analysis/STEP1_estimate_K/elasticity_oddsratio/primi/lower",
+                   save_dir = "./STEP1_estimate_K/elasticity_oddsratio/primi/lower",
                    save_size = 60,
                    iterator_seed = 123,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
@@ -452,7 +452,7 @@ simulation_iterate(start_pops = start_pop_example,
                    ),
                    number_steps = 1200,
                    step_size = 1, models = elasticity_modlist,
-                   save_dir = "./analysis/STEP1_estimate_K/elasticity_oddsratio/primi/higher",
+                   save_dir = "./STEP1_estimate_K/elasticity_oddsratio/primi/higher",
                    save_size = 60,
                    iterator_seed = 123,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
@@ -492,7 +492,7 @@ simulation_iterate(start_pops = start_pop_example,
                    ),
                    number_steps = 1200,
                    step_size = 1, models = elasticity_modlist,
-                   save_dir = "./analysis/STEP1_estimate_K/elasticity_oddsratio/nonprimi/lower",
+                   save_dir = "./STEP1_estimate_K/elasticity_oddsratio/nonprimi/lower",
                    save_size = 60,
                    iterator_seed = 123,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
@@ -523,7 +523,7 @@ simulation_iterate(start_pops = start_pop_example,
                    ),
                    number_steps = 1200,
                    step_size = 1, models = elasticity_modlist,
-                   save_dir = "./analysis/STEP1_estimate_K/elasticity_oddsratio/nonprimi/higher",
+                   save_dir = "./STEP1_estimate_K/elasticity_oddsratio/nonprimi/higher",
                    save_size = 60,
                    iterator_seed = 123,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)

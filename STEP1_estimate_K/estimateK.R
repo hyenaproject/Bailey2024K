@@ -97,10 +97,10 @@ saveRDS(modlist, here::here("./data/model_list.RDS"))
 
 # Take the start pop 1996 and increase it to different sizes
 ## GENERATED IN STEP0_prepare_data/starting_population.R
-start_pop <- read.csv(here::here("./data/starting_data.csv"))
+start_pop <- readRDS(here::here("./data/starting_data.RDS"))
 
 #Run 10 iterations for each year with same starting values
-system.time({v050_K <- simulation_iterate(start_pops = start_pop,
+system.time({db_20_04_2024_K <- simulation_iterate(start_pops = start_pop,
                                           return = FALSE,
                                           sim_years = start_yr:end_yr, i = 10,
                                           predictors = list(start_clan = \(ID) ID$clan_name,
