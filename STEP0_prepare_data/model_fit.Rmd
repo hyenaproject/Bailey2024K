@@ -6,12 +6,9 @@ output:
 date: "2023-01-23"
 ---
 
-Identify best models used for the simulation. This will involve:
+Identify best models used for the simulation. This will involve fitting different density dependent relationships.
 
-1. Comparing different link functions.
-2. Consider different density dependent relationships
-
-We will fit models using random intercept of year AND 6 months. We only consider time periods that have been fully monitored (i.e. we exclude 1996 when using year and first half 1996 when using 6 month time steps).
+We will fit models using random intercept of year.
 
 ## Packages
 
@@ -24,7 +21,7 @@ library(hyenaR)
 ```{r}
 ## Set a starting year. Filter out everything before this
 start_yr <- 1997 # We ignore 1996 because majority are left censored individuals
-end_yr   <- 2021 # Technically we can use data from early 2022, but not enough samples for year RE
+end_yr   <- 2022 # Technically we can use data from early 2023, but not enough samples for year RE
 ```
 
 ## Extract model data
@@ -34,13 +31,13 @@ Extract data that has already been loaded.
 ```{r}
 #Generate data to start simulation (at first observation)
 ## Generate model data from this
-if (file.exists(here::here("./analysis/data/model_data.RDS"))) {
-  model_data <- readRDS(here::here("./analysis/data/model_data.RDS"))
+if (file.exists(here::here("./data/model_data.RDS"))) {
+  model_data <- readRDS(here::here("./data/model_data.RDS"))
 } else {
   
-  #This data is up until 2023
-  ## (so that means that individual deaths should be detectable in 2021)
-  db.path <- "~/data/hyena_data/Fisidata_2023_03_07.sqlite"
+  #This data is up until 2024
+  ## (so that means that individual deaths should be detectable in 2022)
+  db.path <- "~/data/hyena_data/Fisidata_20_04_2024.sqlite"
   
   model_data <- SHIM::generate_model_data(db = db.path)
   
@@ -75,7 +72,7 @@ if (file.exists(here::here("./analysis/data/model_data.RDS"))) {
                      M_second_disp_data = model_data$M_second_disp_data |> 
                        select(second_disp, age, is_philo, year))
   
-  saveRDS(model_data, here::here("./analysis/data/model_data.RDS"))
+  saveRDS(model_data, here::here("./data/model_data.RDS"))
   
 }
 ```
@@ -137,15 +134,22 @@ exp_estimation <- function(x, data, model, pb, verbose = TRUE){
 ```
 
 ```{r}
-exp_profiling <- function(exp, data, model){
+exp_profiling <- function(exp, data, model, optimize = TRUE, ...){
   
   pb <- progress::progress_bar$new(total = length(exp))
   manual_loglik_opt <- sapply(exp, FUN = exp_estimation, data = data, model = model, pb = pb, verbose = FALSE)
   plot_data <- data.frame(exp = exp,
                           loglik = manual_loglik_opt)
   
-  algo_loglik_optim <- optimize(exp_estimation, lower = min(exp), upper = max(exp), data = data, model = model, verbose = FALSE,
-                                maximum = TRUE)
+  ## Include this if model struggles to optimize
+  if (optimize) {
+     algo_loglik_optim <- optimize(exp_estimation, lower = min(exp), upper = max(exp), data = data, model = model, verbose = FALSE,
+                                maximum = TRUE, ...) 
+  } else {
+    algo_loglik_optim <- list()
+    algo_loglik_optim$objective <- max(plot_data$loglik)
+    algo_loglik_optim$maximum <- plot_data$exp[plot_data$loglik == max(plot_data$loglik)]
+  }
   
   loglik_1    <- exp_estimation(x = 1, data = data, model = model, verbose = FALSE)
   loglik_best <- exp_estimation(x = algo_loglik_optim$maximum, data = data, model = model, verbose = FALSE)
@@ -161,7 +165,7 @@ exp_profiling <- function(exp, data, model){
                       size = 3, colour = "red") +
            scale_x_continuous(limits = c(min(exp), max(exp)),
                               breaks = seq(min(exp), max(exp), 1)) +
-           labs(title = paste("Difference between exp=1 and best exponent", round(algo_loglik_optim$maximum, 2), ":\n", round(pval, digits = 2), sep = " ")) +
+           labs(title = paste("P-value difference between exp=1 and best exponent", round(algo_loglik_optim$maximum, 2), ":\n", round(pval, digits = 2), sep = " ")) +
            theme_bw())
   
 }
@@ -172,7 +176,7 @@ exp_profiling <- function(exp, data, model){
 ### Female survival
 
 ```{r}
-F_surv_mod_yr <- compare_linkfn(surv ~ poly(age, 4)*rank_category2 +
+F_surv_mod_yr <- compare_linkfn(surv ~ poly(age, 2)*rank_category2 +
                                   clan_size +
                                   clan_size:rank_category2 + start_clan + (1|start_clan:year),
                                 data = model_data$F_surv_data,
@@ -188,12 +192,12 @@ output <- exp_profiling(exp = c(-1, -0.5, -0.1, 0.1, 0.5, 1, 2, 3), data = model
 output
 ```
 
-*No significant difference from 0 exponent* Best is 0.45
+*No significant difference from 0 exponent* Best is 0.86
 
 #### Plot
 
 ```{r}
-best1y  <- fit_exp(x = 0.45, model = F_surv_mod_yr$logit, data = model_data$F_surv_data, verbose = FALSE)
+best1y  <- fit_exp(x = 0.86, model = F_surv_mod_yr$logit, data = model_data$F_surv_data, verbose = FALSE)
 
 plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all = 1,
                          rank_category2 = c("top", "middle", "bottom"), age = 120, months = 12) %>% 
@@ -218,26 +222,31 @@ PreM_surv_mod_yr <- compare_linkfn(surv ~ poly(age, 2)*rank_category2 +
                                    method = "PQL/L")
 ```
 
-cloglog is best.
+logit is equally good.
 
 Use likelihood profiling to pick best exponent value.
 
 ```{r}
-output <- exp_profiling(exp = c(-1, -0.5, -0.1, 0.1, 0.5, 1, 2, 3, 4, 5, 6), data = model_data$PreM_surv_data, model = PreM_surv_mod_yr$cloglog)
+output <- exp_profiling(exp = c(seq(-1, -0.25, 0.25),
+                                seq(0.25, 2, 0.25),
+                                3, 4, 5, 6), data = model_data$PreM_surv_data,
+                        model = PreM_surv_mod_yr$logit,
+                        ## Struggling to optimise alogrithmically
+                        optimize = FALSE)
 output
 ```
-No sig difference. 2.38 is best.
+No sig difference. -0.25 is best.
 
 #### Plot
 
 ```{r}
-best1y  <- fit_exp(x = 2.38, model = PreM_surv_mod_yr$cloglog, data = model_data$PreM_surv_data, verbose = FALSE)
+best1y  <- fit_exp(x = -0.25, model = PreM_surv_mod_yr$logit, data = model_data$PreM_surv_data, verbose = FALSE)
 
 plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all = 1,
                          rank_category2 = c("top", "middle", "bottom"), age = 12, months = 12) %>% 
   mutate(pred1y = as.numeric(predict(PreM_surv_mod_yr$logit, newdata = ., type = "response", re.form = NA)),
          pred1y_best = as.numeric(predict(best1y, newdata = ., type = "response", re.form = NA)),
-         pred1y_cloglog = as.numeric(predict(PreM_surv_mod_yr$cloglog, newdata = ., type = "response", re.form = NA))) %>% 
+         pred1y_logit = as.numeric(predict(PreM_surv_mod_yr$logit, newdata = ., type = "response", re.form = NA))) %>% 
   tidyr::pivot_longer(starts_with("pred"))
 
 ggplot(data = plot_data)+
@@ -245,34 +254,34 @@ ggplot(data = plot_data)+
   facet_wrap(facets = ~name)
 ```
 
-cloglog exp 1 is best.
+logit exp 1 is best.
 
 ### Male post-dispersal survival
 
 ```{r}
 PostM_surv_mod_yr <- compare_linkfn(surv ~ poly(age, 2)*post_dispersal_status +
-                                         clan_size +
-                                         start_clan + (1|start_clan:year),
-                                       data = model_data$PostM_surv_data,
-                                       method = "PQL/L")
+                                      clan_size +
+                                      start_clan + (1|start_clan:year),
+                                    data = model_data$PostM_surv_data,
+                                    method = "PQL/L")
 ```
 
-cloglog is best
+logit is comparable (a bit worse than probit and cloglog but kept for easy comparison)
 
 Use likelihood profiling to pick best exponent value.
 
 ```{r}
 output <- exp_profiling(c(-2, -1, -0.5, -0.1, 0.1, 0.5, 1, 2, 3, 4, 5, 6, 7), data = model_data$PostM_surv_data,
-                        model = PostM_surv_mod_yr$cloglog)
+                        model = PostM_surv_mod_yr$logit)
 output
 ```
 
-Not significantly different to 0. Best is 0.67
+Not significantly different to 1. Best is 1
 
 #### Plot
 
 ```{r}
-best1y  <- fit_exp(x = 0.67, model = PostM_surv_mod_yr$cloglog, data = model_data$PostM_surv_data, verbose = FALSE)
+best1y  <- fit_exp(x = 1, model = PostM_surv_mod_yr$logit, data = model_data$PostM_surv_data, verbose = FALSE)
 
 plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all = 1,
                          post_dispersal_status = c("philo", "disp"), age = 120, months = 12) %>% 
@@ -286,31 +295,33 @@ ggplot(data = plot_data)+
   facet_wrap(facets = ~name, scales = "free_y")
 ```
 
-cloglog with no exponent.
+logit with no exponent.
 
 ### Primiparous reproduction
 
 ```{r}
-F_repro_primi_mod_yr <- compare_linkfn(repro ~ months*rank_category2 +
+F_repro_primi_mod_yr <- compare_linkfn(repro ~ log(months+0.01)*rank_category2 +
                                          rank_category2*clan_size +
                                          after1y_effort_all + start_clan + (1|start_clan:year),
                                        data = model_data$F_repro_primi,
                                        method = "PQL/L")
 ```
 
-Probit is best.
+Probit is much better, but sticking with logit now for consistency.
 
 Use likelihood profiling to pick best exponent value.
 
 ```{r}
-output <- exp_profiling(c(-2, -1, -0.5, -0.1, 0.1, 0.5, 1, 2, 3, 4, 5, 6, 7), data = model_data$F_repro_primi, model = F_repro_primi_mod_yr$probit)
+output <- exp_profiling(c(-2, -1, -0.5, -0.1, 0.1, 0.5, 1, 2), data = model_data$F_repro_primi, model = F_repro_primi_mod_yr$logit)
 output
 ```
+
+No significant different. Best is -0.71
 
 #### Plot
 
 ```{r}
-best1y  <- fit_exp(x = -0.5, model = F_repro_primi_mod_yr$probit, data = F_repro_primi_yr, verbose = FALSE)
+best1y  <- fit_exp(x = -0.71, model = F_repro_primi_mod_yr$logit, data = model_data$F_repro_primi, verbose = FALSE)
 
 plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all = 1,
                          rank_category2 = c("top", "middle", "bottom"), age = 120, months = 12) %>% 
@@ -324,31 +335,32 @@ ggplot(data = plot_data)+
   facet_wrap(facets = ~name, scales = "free_y")
 ```
 
-Probit with no exponent is best.
+Logit with no exponent is best.
 
 ### Multiparous reproduction
 
 ```{r}
-F_repro_nonprimi_mod_yr <- compare_linkfn(repro ~ months*rank_category2 + months*age +
-                                            clan_size*rank_category2 + after1y_effort_all + start_clan +
-                                            (1|start_clan:year),
+F_repro_nonprimi_mod_yr <- compare_linkfn(repro ~ log(months+0.01)*rank_category2 + log(months+0.01)*age +
+                                                    clan_size*rank_category2 + after1y_effort_all + start_clan + (1|start_clan:year),
                                           data = model_data$F_repro_nonprimi,
                                           method = "PQL/L")
 ```
 
-Probit is best.
+Logit is best.
 
 Use likelihood profiling to pick best exponent value.
 
 ```{r}
-output <- exp_profiling(c(-2, -1.5, -1, -0.5, -0.1, 0.1, 0.5, 1, 2, 3, 4, 5, 6, 7), data = model_data$F_repro_nonprimi, model = F_repro_nonprimi_mod_yr$probit)
+output <- exp_profiling(c(-2, -1.5, -1, -0.5, -0.1, 0.1, 0.5, 1, 2, 3, 4, 5, 6, 7), data = model_data$F_repro_nonprimi, model = F_repro_nonprimi_mod_yr$logit)
 output
 ```
+
+No significant difference. Best is 0.39
 
 #### Plot
 
 ```{r}
-best1y  <- fit_exp(x = -1, model = F_repro_nonprimi_mod_yr$probit, data = model_data$F_repro_nonprimi, verbose = FALSE)
+best1y  <- fit_exp(x = 0.39, model = F_repro_nonprimi_mod_yr$logit, data = model_data$F_repro_nonprimi, verbose = FALSE)
 
 plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all = 1,
                          rank_category2 = c("top", "middle", "bottom"), age = 120, months = 12) %>% 
@@ -362,16 +374,15 @@ ggplot(data = plot_data)+
   facet_wrap(facets = ~name, scales = "free_y")
 ```
 
-Probit with no exponent.
+Logit with no exponent.
 
 ### Twinning
 
 ```{r}
 twin_mod_yr <- compare_linkfn(twin ~ poly(age, 2)*rank_category2 +
-                                after1y_effort_all +
-                                clan_size*rank_category2 +
-                                start_clan +
-                                (1|start_clan:year),
+                                           after1y_effort_all +
+                                           clan_size*rank_category2 +
+                                           start_clan + (1|start_clan:year),
                               data = model_data$F_twin_data,
                               method = "PQL/L")
 ```
@@ -385,11 +396,13 @@ output <- exp_profiling(c(-3, -2.5, -2, -1.5, -1, -0.5, -0.1, 0.1, 0.5, 1, 2, 3,
 output
 ```
 
+No significant difference. Best is -0.33
+
 #### Plot
 
 ```{r}
 
-best1y  <- fit_exp(x = -1, model = twin_mod_yr$logit, data = twin_yr, verbose = FALSE)
+best1y  <- fit_exp(x = -0.33, model = twin_mod_yr$logit, data = model_data$F_twin_data, verbose = FALSE)
 
 plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all = 1,
                          rank_category2 = c("top", "middle", "bottom"), age = 120, months = 12) %>% 
