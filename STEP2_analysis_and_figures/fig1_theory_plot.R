@@ -110,9 +110,9 @@ library(ggtext)
 
 panel1 <- ggplot() +
   geom_line(data = plot_data_fig1a,
-            aes(x = t, y = Kt), lty = 2, linewidth = 1) +
+            aes(x = t, y = Kt), lty = 2, linewidth = 1.2) +
   geom_line(data = plot_data_fig1a,
-            aes(x = t, y = Nt), lty = 1, linewidth = 1) +
+            aes(x = t, y = Nt), lty = 1, linewidth = 1.2) +
   geom_ribbon(aes(x = c(250, Inf),
                   ymin = c(-Inf, -Inf),
                   ymax = c(Inf, Inf)), alpha = 0.25) +
@@ -122,16 +122,16 @@ panel1 <- ggplot() +
   geom_richtext(aes(x = 200, y = 390,
                     label = "K<sub>t</sub>"),
                 fill = NA, label.colour = NA,
-                size = 12) +
+                size = 17) +
   geom_richtext(aes(x = 200, y = 150,
                     label = "N<sub>t</sub>"),
                 fill = NA, label.colour = NA,
-                size = 12) +
+                size = 17) +
   geom_richtext(aes(x = c(125, 375),
-                    y = c(540, 540),
-                    label = c("Monitoring period", "Future")),
+                    y = c(550, 550),
+                    label = c("Monitoring<br>period", "Future")),
                 fill = NA, label.colour = NA,
-                size = 8, hjust = 0.5) +
+                size = 12, hjust = 0.5, vjust = 1) +
   coord_cartesian(ylim = c(NA, 550)) +
   labs(y = "Number of individuals") +
   facet_wrap(facets = ~panel) +
@@ -139,18 +139,18 @@ panel1 <- ggplot() +
   theme(axis.text = element_blank(),
         axis.ticks = element_blank(),
         axis.title.x = element_blank(),
-        axis.title.y = element_text(size = 25),
+        axis.title.y = element_text(size = 35, margin = margin(r = 10, l = 10)),
         axis.line = element_blank(),
         strip.background = element_rect(fill = "white"),
         strip.text = element_text(size = 35, colour = "black",
                                   margin = margin(t = 10, b = 10)),
-        panel.background = element_rect(colour = "black"))
+        panel.background = element_rect(colour = "black", linewidth = 1.5))
 
 panel2 <- ggplot() +
   geom_line(data = plot_data_fig1b,
-            aes(x = t, y = Kt), lty = 2, linewidth = 1) +
+            aes(x = t, y = Kt), lty = 2, linewidth = 1.2) +
   geom_line(data = plot_data_fig1b,
-            aes(x = t, y = Nt), lty = 1, linewidth = 1) +
+            aes(x = t, y = Nt), lty = 1, linewidth = 1.2) +
   geom_ribbon(aes(x = c(250, Inf),
                   ymin = c(-Inf, -Inf),
                   ymax = c(Inf, Inf)), alpha = 0.25) +
@@ -163,18 +163,18 @@ panel2 <- ggplot() +
   theme(axis.text = element_blank(),
         axis.ticks = element_blank(),
         axis.title.y = element_blank(),
-        axis.title.x = element_text(size = 25),
+        axis.title.x = element_text(size = 35, margin = margin(t = 10, b = 10)),
         axis.line = element_blank(),
         strip.background = element_rect(fill = "white"),
         strip.text = element_text(size = 35, colour = "black",
                                   margin = margin(t = 10, b = 10)),
-        panel.background = element_rect(colour = "black"))
+        panel.background = element_rect(colour = "black", linewidth = 1.5))
 
 panel3 <- ggplot() +
   geom_line(data = plot_data_fig1c,
-            aes(x = t, y = Kt), lty = 2, linewidth = 1) +
+            aes(x = t, y = Kt), lty = 2, linewidth = 1.2) +
   geom_line(data = plot_data_fig1c,
-            aes(x = t, y = Nt), lty = 1, linewidth = 1) +
+            aes(x = t, y = Nt), lty = 1, linewidth = 1.2) +
   geom_ribbon(aes(x = c(250, Inf),
                   ymin = c(-Inf, -Inf),
                   ymax = c(Inf, Inf)), alpha = 0.25) +
@@ -190,7 +190,7 @@ panel3 <- ggplot() +
         strip.background = element_rect(fill = "white"),
         strip.text = element_text(size = 35, colour = "black",
                                   margin = margin(t = 10, b = 10)),
-        panel.background = element_rect(colour = "black"))
+        panel.background = element_rect(colour = "black", linewidth = 1.5))
 
 panel1 + panel2 + panel3 + plot_layout(nrow = 1)
 
