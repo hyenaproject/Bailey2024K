@@ -94,7 +94,7 @@ Extract lion data
 
 ```{r}
 all_lions <- extract_database_table("carnivores") %>% 
-  filter(species == "li" & !is.na(longitude) & !is.na(latitude)) %>% 
+  filter(species %in% c("li", "lio", "LIO") & !is.na(longitude) & !is.na(latitude)) %>% 
   #When there are >1 record with same date_time & lat-long just take the first (these are duplicates which are already recorded in group size)
   group_by(date_time, latitude, longitude) %>% 
   slice(1) %>% 
@@ -151,7 +151,9 @@ Join with existing data
 mod_data_all <- prey_plot_datapop |> 
   left_join(lion_density |> 
               sf::st_drop_geometry(),
-            by = c("clan", "year"))
+            by = c("clan", "year")) |> 
+  ## When there are no lions observed, treat as 0
+  mutate(across(c(total_lions, total_sightings, lion_density, sighting_density), \(x) tidyr::replace_na(x, 0)))
 ```
 
 ### Disease

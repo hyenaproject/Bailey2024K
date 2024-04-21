@@ -24,21 +24,21 @@ library(ggtext)
 
 ```{r}
 start_year  <- 1997
-end_year    <- 2021
+end_year    <- 2022
 ```
 
 Load environmental data
 
 ```{r}
 ## GENERATED IN STEP0_prepare_data/mechanistic_data.Rmd
-mechanistic_data <- read.csv(here::here("./analysis/data/mechanistic_model_data.csv"))
+mechanistic_data <- read.csv(here::here("./data/mechanistic_model_data.csv"))
 ```
 
 Extract K data
 
 ```{r k_data_clan}
-if (file.exists(here::here("./analysis/data/Kplot_clan_data.RDS"))) {
-  Kplot_data <- readRDS(here::here("./analysis/data/Kplot_clan_data.RDS"))
+if (file.exists(here::here("./data/Kplot_clan_data.RDS"))) {
+  Kplot_data <- readRDS(here::here("./data/Kplot_clan_data.RDS"))
 } else {
   
   ## EXTRACT ESTIMATED K
@@ -51,7 +51,7 @@ if (file.exists(here::here("./analysis/data/Kplot_clan_data.RDS"))) {
                                 
                                 pb_yr$tick()
                                 
-                                txt_files <- list.files(here(paste0("./analysis/STEP1_estimate_K/", year)),
+                                txt_files <- list.files(here(paste0("./STEP1_estimate_K/", year)),
                                                         pattern = ".txt", full.names = TRUE)
                                 
                                 allsims <- purrr::map_df(.x = txt_files,
@@ -85,7 +85,7 @@ if (file.exists(here::here("./analysis/data/Kplot_clan_data.RDS"))) {
                                 
                               })
   
-  saveRDS(Kplot_data, file = here("./analysis/data/Kplot_clan_data.RDS"))
+  saveRDS(Kplot_data, file = here("./data/Kplot_clan_data.RDS"))
 }
 
 ```
@@ -533,9 +533,11 @@ plot_lion_marg
 ### Final plot
 
 ```{r}
-plot_avgprey_marg + plot_disease_marg + plot_lion_marg + patchwork::plot_layout(nrow = 1) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
+plot_avgprey_marg + plot_disease_marg + plot_lion_marg + patchwork::plot_layout(nrow = 1) +
+  patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")  &
+  theme(plot.tag.position = c(0.175, 0.975), plot.tag = element_text(size = 17))
 
-ggsave(filename = here::here("analysis/plots/mechanistic_results_new.png"), dpi = 600,
+ggsave(filename = here::here("./plots/mechanistic_results.png"), dpi = 600,
        width = 15, height = 5)
 ```
 
@@ -628,8 +630,10 @@ plot_grazing_marg
 #### Save output
 
 ```{r}
-plot_avgprey_marg + plot_disease_marg + plot_lion_marg + plot_road_marg + plot_grazing_marg + patchwork::plot_layout(nrow = 2, ncol = 3) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
+plot_avgprey_marg + plot_disease_marg + plot_lion_marg + plot_road_marg + plot_grazing_marg +
+  patchwork::plot_layout(nrow = 2, ncol = 3) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")") &
+  theme(plot.tag.position = c(0.175, 0.975), plot.tag = element_text(size = 20))
 
-ggsave(filename = here::here("analysis/plots/supp_mechanistic_results_new.png"), dpi = 600,
+ggsave(filename = here::here("./plots/supp_mechanistic_results.png"), dpi = 600,
        width = 15, height = 10)
 ```
