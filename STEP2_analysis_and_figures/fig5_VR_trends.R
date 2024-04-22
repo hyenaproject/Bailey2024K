@@ -7,58 +7,58 @@ library(ggplot2)
 library(spaMM)
 
 
-#This data is up until 2023
-## (so that means that individual deaths should be detectable in 2021)
-start_year  <- 1997
-end_year    <- 2021
+#This data is up until 2024
+## (so that means that individual deaths should be detectable in 2022)
+start_yr  <- 1997
+end_yr    <- 2022
 
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
-model_data <- readRDS(here::here("./analysis/data/model_data.RDS"))
+model_data <- readRDS(here::here("./data/model_data.RDS"))
 
 ## Fem survival
-F_surv_data <- model_data$F_surv_data |>  
-  dplyr::filter(year >= start_yr & year <= end_yr) |> 
-  mutate(globalmean = sum(surv)/n()) |> 
-  group_by(globalmean, year) |> 
+F_surv_data <- model_data$F_surv_data |>
+  dplyr::filter(year >= start_yr & year <= end_yr) |>
+  mutate(globalmean = sum(surv)/n()) |>
+  group_by(globalmean, year) |>
   summarise(binom::binom.wilson(n = n(), x = sum(surv)),
             VR = "Female survival")
 
 ### M predisp survival ####
-PreM_surv_data <- model_data$PreM_surv_data |> 
-  dplyr::filter(year >= start_yr & year <= end_yr) |> 
-  mutate(globalmean = sum(surv)/n()) |> 
-  group_by(globalmean, year) |> 
+PreM_surv_data <- model_data$PreM_surv_data |>
+  dplyr::filter(year >= start_yr & year <= end_yr) |>
+  mutate(globalmean = sum(surv)/n()) |>
+  group_by(globalmean, year) |>
   summarise(binom::binom.wilson(n = n(), x = sum(surv)),
             VR = "Male survival\n (juvenile)")
 
 ### M postdisp survival ####
 postM_surv_data <- model_data$PostM_surv_data %>%
-  dplyr::filter(year >= start_yr & year <= end_yr) |> 
-  mutate(globalmean = sum(surv)/n()) |> 
-  group_by(globalmean, year) |> 
+  dplyr::filter(year >= start_yr & year <= end_yr) |>
+  mutate(globalmean = sum(surv)/n()) |>
+  group_by(globalmean, year) |>
   summarise(binom::binom.wilson(n = n(), x = sum(surv)),
             VR = "Male survival\n (adult)")
 
 ### Twin ####
-F_twin_data <- model_data$F_twin_data %>% 
-  dplyr::filter(year >= start_yr & year <= end_yr) |> 
-  mutate(globalmean = sum(twin)/n()) |> 
-  group_by(globalmean, year) |> 
+F_twin_data <- model_data$F_twin_data %>%
+  dplyr::filter(year >= start_yr & year <= end_yr) |>
+  mutate(globalmean = sum(twin)/n()) |>
+  group_by(globalmean, year) |>
   summarise(binom::binom.wilson(n = n(), x = sum(twin)),
             VR = "Twinning\n")
 
 ### All repro ####
-F_repro_primi <- model_data$F_repro_primi %>% 
-  dplyr::filter(year >= start_yr & year <= end_yr) |> 
-  mutate(globalmean = sum(repro)/n()) |> 
-  group_by(globalmean, year) |> 
+F_repro_primi <- model_data$F_repro_primi %>%
+  dplyr::filter(year >= start_yr & year <= end_yr) |>
+  mutate(globalmean = sum(repro)/n()) |>
+  group_by(globalmean, year) |>
   summarise(binom::binom.wilson(n = n(), x = sum(repro)),
             VR = "Reproduction\n(primiparous)")
 
-F_repro_nonprimi <- model_data$F_repro_nonprimi %>% 
-  dplyr::filter(year >= start_yr & year <= end_yr) |> 
-  mutate(globalmean = sum(repro)/n()) |> 
-  group_by(globalmean, year) |> 
+F_repro_nonprimi <- model_data$F_repro_nonprimi %>%
+  dplyr::filter(year >= start_yr & year <= end_yr) |>
+  mutate(globalmean = sum(repro)/n()) |>
+  group_by(globalmean, year) |>
   summarise(binom::binom.wilson(n = n(), x = sum(repro)),
             VR = "Reproduction\n(non-primiparous)")
 
@@ -68,7 +68,7 @@ plot_data <- do.call(bind_rows,
                           postM_surv_data,
                           F_repro_primi,
                           F_repro_nonprimi,
-                          F_twin_data)) |> 
+                          F_twin_data)) |>
   mutate(VR = factor(VR,
                      levels = c("Female survival", "Male survival\n (juvenile)", "Male survival\n (adult)",
                                 "Reproduction\n(primiparous)", "Reproduction\n(non-primiparous)", "Twinning\n")))
@@ -183,5 +183,5 @@ library(patchwork)
 
 surv_panel/((repro_panel|twin_panel) + plot_layout(widths = c(2.2, 1)))
 
-ggsave(filename = here::here("./analysis/plots/VR_time.png"), dpi = 600,
+ggsave(filename = here::here("./plots/VR_time.png"), dpi = 600,
        width = 8, height = 5)

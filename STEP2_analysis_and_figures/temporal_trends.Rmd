@@ -31,7 +31,7 @@ Define which simulation type we're using
 ```{r params}
 start_year  <- 1997
 end_year    <- 2021
-scale <- "year"
+scale <- "month"
 ```
 
 # Extract data
@@ -40,7 +40,7 @@ Extract estimated K
 
 ```{r k_data}
 ## Time-varying carrying capacity (Kt) 
-if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
+if (!file.exists(here::here("./data/Kplot_data.RDS"))) {
   ## EXTRACT ESTIMATED K
   years <- start_year:end_year
   
@@ -51,7 +51,7 @@ if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
                                 
                                 pb_yr$tick()
                                 
-                                txt_files <- list.files(here(paste0("./analysis/STEP1_estimate_K/", year)),
+                                txt_files <- list.files(here(paste0("./STEP1_estimate_K/", year)),
                                                         pattern = ".txt", full.names = TRUE)
                                 
                                 allsims <- purrr::map_df(.x = txt_files,
@@ -81,9 +81,9 @@ if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
                                 
                               })
   
-  saveRDS(Kplot_data, here::here("./analysis/data/Kplot_data.RDS"))
+  saveRDS(Kplot_data, here::here("./data/Kplot_data.RDS"))
 } else {
-  Kplot_data <- readRDS(here::here("./analysis/data/Kplot_data.RDS"))
+  Kplot_data <- readRDS(here::here("./data/Kplot_data.RDS"))
 }
 
 ```
@@ -92,9 +92,9 @@ Extract real pop data over time at 1 month and 6mo intervals.
 
 ```{r N_data}
 if (scale == "year"){
-  real_pop <- readRDS(here::here("./analysis/data/Nplot_data.RDS"))  
+  real_pop <- readRDS(here::here("./data/Nplot_data.RDS"))  
 } else if (scale == "month"){
-  real_pop <- readRDS(here::here("./analysis/data/Nplot_data_month.RDS")) 
+  real_pop <- readRDS(here::here("./data/Nplot_data_month.RDS")) 
 }
 ```
 
@@ -102,7 +102,7 @@ Prepare sex and age ratio data
 
 ```{r N_data_separate}
 ### GENERATED IN STEP0_prepare_data/demographic_data.R
-real_pop_separate <- readRDS(here::here("./analysis/data/Nplot_data_separate_1month.RDS"))
+real_pop_separate <- readRDS(here::here("./data/Nplot_data_separate_1month.RDS"))
 
 ### Calculate sex ratio (male/all females)
 ratios <- real_pop_separate %>% 
@@ -142,27 +142,25 @@ slope_data <- real_pop %>%
 And if we tried to calculate the slope w/ CI for this growth period?
 
 ```{r growthNmodel}
-mod_data <- data.frame(date = as.Date("1996-04-01"),
-                       pop_size = fetch_pop_number(main.clans = TRUE, at = find_pop_date.observation.first())) %>% 
-  bind_rows(real_pop) %>% 
-  filter(date %in% seq.Date(as.Date("1996-04-01"),
-                            as.Date("2012-04-01"), "6 month")) %>% 
-  mutate(n = 1:n())
-
-mod <- spaMM::fitme(pop_size ~ n + AR1(1|n), data = mod_data)
-
-summary(mod)
-```
-
-```{r DHARMaN}
-library(DHARMa)
-simresid <- simulateResiduals(mod, n = 1000)
-
-testUniformity(simresid)
-```
-
-```{r}
-summary(mod)
+## USES HYENAR, WHICH REQUIRES FULL DB TO BE LOADED
+# mod_data <- data.frame(date = as.Date("1996-04-01"),
+#                        pop_size = fetch_pop_number(main.clans = TRUE, at = find_pop_date.observation.first())) %>% 
+#   bind_rows(real_pop) %>% 
+#   filter(date %in% seq.Date(as.Date("1996-04-01"),
+#                             as.Date("2012-04-01"), "6 month")) %>% 
+#   mutate(n = 1:n())
+# 
+# mod <- spaMM::fitme(pop_size ~ n + AR1(1|n), data = mod_data)
+# 
+# summary(mod)
+# 
+# 
+# library(DHARMa)
+# simresid <- simulateResiduals(mod, n = 1000)
+# 
+# testUniformity(simresid)
+# 
+# summary(mod)
 ```
 
 ## Fluctuation in N following growth
@@ -325,8 +323,10 @@ LRT to compare model to null
 global_mod <- fitme(globalK ~ year, data = poisson_data, family = "gaussian")
 null_mod   <- fitme(globalK ~ 1, data = poisson_data, family = "gaussian")
 
-LRT_result_gaussian <- LRT(global_mod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
-data.frame(basic = LRT_result_gaussian$basicLRT$p_value, bartlett = LRT_result_gaussian$BartBootLRT$p_value, bootstrap = LRT_result_gaussian$rawBootLRT$p_value)
+## #Asymptotic pvalue for consistency
+LRT(global_mod, null_mod)
+# LRT_result_gaussian <- LRT(global_mod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+# data.frame(basic = LRT_result_gaussian$basicLRT$p_value, bartlett = LRT_result_gaussian$BartBootLRT$p_value, bootstrap = LRT_result_gaussian$rawBootLRT$p_value)
 ```
 
 Summary of full model
@@ -355,10 +355,12 @@ LRT to compare model to null
 global_mod <- fitme(globalK ~ year + 1, data = poisson_data, family = spaMM::negbin2())
 null_mod   <- fitme(globalK ~ 1, data = poisson_data, family = spaMM::negbin2())
 
-LRT_result_poisson <- LRT(global_mod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
-data.frame(basic = LRT_result_poisson$basicLRT$p_value,
-           bartlett = LRT_result_poisson$BartBootLRT$p_value,
-           bootstrap = LRT_result_poisson$rawBootLRT$p_value)
+## Asympototic for consistency
+LRT(global_mod, null_mod)
+# LRT_result_poisson <- LRT(global_mod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+# data.frame(basic = LRT_result_poisson$basicLRT$p_value,
+#            bartlett = LRT_result_poisson$BartBootLRT$p_value,
+#            bootstrap = LRT_result_poisson$rawBootLRT$p_value)
 ```
 
 Summary of full model
@@ -382,8 +384,8 @@ fixef(global_mod)[2]
 ## Ktc in full period
 
 ```{r ktc_data}
-if (file.exists(here::here("./analysis/data/Kplot_clan_data.RDS"))) {
-  Kplot_data_byclan <- readRDS(here::here("./analysis/data/Kplot_clan_data.RDS"))
+if (file.exists(here::here("./data/Kplot_clan_data.RDS"))) {
+  Kplot_data_byclan <- readRDS(here::here("./data/Kplot_clan_data.RDS"))
 } else {
   
   ## EXTRACT ESTIMATED
@@ -430,7 +432,7 @@ if (file.exists(here::here("./analysis/data/Kplot_clan_data.RDS"))) {
                                 
                               }, folder_name = folder_name)
   
-  saveRDS(Kplot_data, file = here("./analysis/data/Kplot_clan_data.RDS"))
+  saveRDS(Kplot_data, file = here("./data/Kplot_clan_data.RDS"))
 }
 
 ```
@@ -530,7 +532,9 @@ spaMM::confint.HLfit(global_mod, parm = "year:nameT", boot_args = list(nsim = 99
 K_model_growthperiod <- fitme(globalK ~ year, data = poisson_data %>% filter(year <= 2012), family = "gaussian")
 null_mod <- fitme(globalK ~ 1, data = poisson_data %>% filter(year <= 2012), family = "gaussian")
 
-LRT(K_model_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+## Asympototic for consistency
+LRT(K_model_growthperiod, null_mod)
+# LRT(K_model_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
 ```
 
 ```{r}
@@ -550,7 +554,9 @@ K_model_perclan_growthperiod <- fitme(median ~ year:name + name + AR1(1|n),
 null_mod <- fitme(median ~ name + AR1(1|n),
                   data = plot_data %>% filter(year <= 2012), family = "gaussian")
 
-LRT(K_model_perclan_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+## Asympototic for consistency
+LRT(K_model_perclan_growthperiod, null_mod)
+# LRT(K_model_perclan_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
 ```
 
 ```{r}
@@ -596,6 +602,7 @@ Descriptive stats
 ```{r}
 real_pop_separate %>% 
   mutate(sexratio = ad_male/(ad_male + ad_fem)) %>% 
+  filter(lubridate::year(date) <= 2022) |> 
   summarise(median = median(sexratio),
             min = min(sexratio),
             max = max(sexratio))
@@ -607,6 +614,7 @@ Do this at every 6 months to be comparable
 
 ```{r}
 ratio_data <- real_pop_separate %>% 
+  filter(lubridate::year(date) <= 2022) |> 
   filter(lubridate::month(date) %in% c(1, 7)) %>% 
   mutate(n = 1:n())
 sexratio_mod <- fitme(cbind(ad_male, ad_fem) ~ n, data = ratio_data, family = "binomial")
@@ -661,6 +669,7 @@ Descriptive stats
 ```{r}
 real_pop_separate %>% 
   mutate(sexratio = young/(young + ad_male + ad_fem)) %>% 
+  filter(lubridate::year(date) <= 2022) |> 
   summarise(median = median(sexratio),
             min = min(sexratio),
             max = max(sexratio))

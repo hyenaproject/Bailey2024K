@@ -64,6 +64,13 @@ if (!file.exists(here::here("./data/Kplot_data.RDS"))) {
   Kplot_data <- readRDS(here::here("./data/Kplot_data.RDS"))
 }
 
+## GENERATE SUMMARY STATS
+range(Kplot_data$globalK)
+sd(Kplot_data$globalK)
+median(Kplot_data$globalK)
+mean(Kplot_data$globalK)
+nrow(Kplot_data)/sum(1/Kplot_data$globalK) ## Harmonic mean
+
 ### GENERATED IN STEP0_prepare_data/demographic_data.R
 if (scale == "month") {
   real_pop <- readRDS(here::here("./data/Nplot_data_month.RDS"))

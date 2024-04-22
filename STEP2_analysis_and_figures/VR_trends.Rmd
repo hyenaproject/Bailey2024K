@@ -19,10 +19,10 @@ Fit models
 
 ```{r fit_models}
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
-model_data <- readRDS(here::here("./analysis/data/model_data.RDS"))
+model_data <- readRDS(here::here("./data/model_data.RDS"))
 
 ## GENERATED IN STEP1_estimate_K/estimateK.R
-modlist <- readRDS(here::here("./analysis/data/model_list.RDS"))
+modlist <- readRDS(here::here("./data/model_list.RDS"))
 ```
 
 ## LRT of year term in each model.
