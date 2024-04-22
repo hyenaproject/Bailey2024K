@@ -235,8 +235,11 @@ Compare to null (significant!)
 null_mod <- fitme(globalK ~ 1 + AR1(1|year),
                   data = mod_data_alldisease_consv,
                   family = gaussian(link = "identity"))
-global_LRT_mod3 <- LRT(mod3, null_mod, boot.repl = 999, nb_cores = 10, seed = 124)
-data.frame(basic = global_LRT_mod3$basicLRT$p_value, bartlett = global_LRT_mod3$BartBootLRT$p_value, bootstrap = global_LRT_mod3$rawBootLRT$p_value)
+## USE ASYMPTOTIC LRT P-VAL RATHER THAN BOOTSTRAP.
+## THIS ALLOWS US TO BE CONSISTENT IN ALL RESULTS
+LRT(mod3, null_mod)
+# global_LRT_mod3 <- LRT(mod3, null_mod, boot.repl = 999, nb_cores = 10, seed = 124)
+# data.frame(basic = global_LRT_mod3$basicLRT$p_value, bartlett = global_LRT_mod3$BartBootLRT$p_value, bootstrap = global_LRT_mod3$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -262,8 +265,11 @@ nograzingban <- fitme(globalK ~ lion_density_scale + avgprey_scale + roaduse + t
 ```
 
 ```{r}
-lionLRT_mod3 <- LRT(mod3, nolion, boot.repl = 999, nb_cores = 10, seed = 124)
-data.frame(basic = lionLRT_mod3$basicLRT$p_value, bartlett = lionLRT_mod3$BartBootLRT$p_value, bootstrap = lionLRT_mod3$rawBootLRT$p_value)
+## USE ASYMPTOTIC LRT P-VAL RATHER THAN BOOTSTRAP.
+## THIS ALLOWS US TO BE CONSISTENT IN ALL RESULTS
+LRT(mod3, nolion)
+# lionLRT_mod3 <- LRT(mod3, nolion, boot.repl = 999, nb_cores = 10, seed = 124)
+# data.frame(basic = lionLRT_mod3$basicLRT$p_value, bartlett = lionLRT_mod3$BartBootLRT$p_value, bootstrap = lionLRT_mod3$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -272,8 +278,11 @@ lionCI_mod3
 ```
 
 ```{r}
-preyLRT_mod3<- LRT(mod3, noprey, boot.repl = 999, nb_cores = 10, seed = 124)
-data.frame(basic = preyLRT_mod3$basicLRT$p_value, bartlett = preyLRT_mod3$BartBootLRT$p_value, bootstrap = preyLRT_mod3$rawBootLRT$p_value)
+## USE ASYMPTOTIC LRT P-VAL RATHER THAN BOOTSTRAP.
+## THIS ALLOWS US TO BE CONSISTENT IN ALL RESULTS
+LRT(mod3, noprey)
+# preyLRT_mod3<- LRT(mod3, noprey, boot.repl = 999, nb_cores = 10, seed = 124)
+# data.frame(basic = preyLRT_mod3$basicLRT$p_value, bartlett = preyLRT_mod3$BartBootLRT$p_value, bootstrap = preyLRT_mod3$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -282,8 +291,11 @@ preyCI_mod3
 ```
 
 ```{r}
-diseaseLRT_mod3 <- LRT(mod3, nodisease, boot.repl = 999, nb_cores = 10, seed = 124)
-data.frame(basic = diseaseLRT_mod3$basicLRT$p_value, bartlett = diseaseLRT_mod3$BartBootLRT$p_value, bootstrap = diseaseLRT_mod3$rawBootLRT$p_value)
+## USE ASYMPTOTIC LRT P-VAL RATHER THAN BOOTSTRAP.
+## THIS ALLOWS US TO BE CONSISTENT IN ALL RESULTS
+LRT(mod3, nodisease)
+# diseaseLRT_mod3 <- LRT(mod3, nodisease, boot.repl = 999, nb_cores = 10, seed = 124)
+# data.frame(basic = diseaseLRT_mod3$basicLRT$p_value, bartlett = diseaseLRT_mod3$BartBootLRT$p_value, bootstrap = diseaseLRT_mod3$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -292,8 +304,11 @@ diseaseCI_mod3
 ```
 
 ```{r}
-roaduseLRT_mod3 <- LRT(mod3, noroaduse, boot.repl = 999, nb_cores = 10, seed = 124)
-data.frame(basic = roaduseLRT_mod3$basicLRT$p_value, bartlett = roaduseLRT_mod3$BartBootLRT$p_value, bootstrap = roaduseLRT_mod3$rawBootLRT$p_value)
+## USE ASYMPTOTIC LRT P-VAL RATHER THAN BOOTSTRAP.
+## THIS ALLOWS US TO BE CONSISTENT IN ALL RESULTS
+LRT(mod3, noroaduse)
+# roaduseLRT_mod3 <- LRT(mod3, noroaduse, boot.repl = 999, nb_cores = 10, seed = 124)
+# data.frame(basic = roaduseLRT_mod3$basicLRT$p_value, bartlett = roaduseLRT_mod3$BartBootLRT$p_value, bootstrap = roaduseLRT_mod3$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -302,8 +317,11 @@ roaduseCI_mod3
 ```
 
 ```{r}
-grazingbanLRT <- LRT(mod3, nograzingban, boot.repl = 999, nb_cores = 10, seed = 124)
-data.frame(basic = grazingbanLRT$basicLRT$p_value, bartlett = grazingbanLRT$BartBootLRT$p_value, bootstrap = grazingbanLRT$rawBootLRT$p_value)
+## USE ASYMPTOTIC LRT P-VAL RATHER THAN BOOTSTRAP.
+## THIS ALLOWS US TO BE CONSISTENT IN ALL RESULTS
+LRT(mod3, nograzingban)
+# grazingbanLRT <- LRT(mod3, nograzingban, boot.repl = 999, nb_cores = 10, seed = 124)
+# data.frame(basic = grazingbanLRT$basicLRT$p_value, bartlett = grazingbanLRT$BartBootLRT$p_value, bootstrap = grazingbanLRT$rawBootLRT$p_value)
 ```
 
 ```{r}
