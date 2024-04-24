@@ -7,9 +7,6 @@
 #PREPARE PACKAGES AND LOAD DATA ####
 options(future.rng.onMisuse="ignore", scipen = 200)
 
-## Currently allows for more flexible rank fn (e.g. identify natals to take just natal rank)
-# remotes::install_github(repo = "hyenaproject/SHIM", force = TRUE, ref = "v0.5.21")
-
 #Load required libraries
 library(SHIM)
 library(dplyr)
@@ -18,106 +15,118 @@ library(ggplot2)
 library(spaMM)
 library(here)
 
+start_yr <- 1997
+end_yr <- 2022
+
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
 model_data <- readRDS(here::here("./data/model_data.RDS"))
 
 ## GENERATED IN STEP1_estimate_K/estimateK.R
 modlist <- readRDS(here::here("./data/model_list.RDS"))
 
+## Update all models here to avoid env issues
+modlist$allF <- update(modlist$allF, data = model_data$F_surv_data)
+modlist$postdispM <- update(modlist$postdispM, data = model_data$PostM_surv_data)
+modlist$predispM <- update(modlist$predispM, data = model_data$PreM_surv_data)
+modlist$twin <- update(modlist$twin, data = model_data$F_twin_data)
+modlist$disp <- update(modlist$disp, data = model_data$M_second_disp_data)
+modlist$primirepro <- update(modlist$primirepro, data = model_data$F_repro_primi)
+modlist$nonprimirepro <- update(modlist$nonprimirepro, data = model_data$F_repro_nonprimi)
+
 ## Choose individuals born in 2010
 ## Cohort of individuals with lots of information
 
 ### CREATE FN TO REFIT MODEL WITH CHANGED INTERCEPT ####
 refit_mod <- function(mod, x){
-  
+
   oldfixef <- spaMM::fixef(mod)
   oldfixef["(Intercept)"] <- oldfixef["(Intercept)"] + x
-  stats::update(mod, etaFix = list(beta = oldfixef), 
+  stats::update(mod, etaFix = list(beta = oldfixef),
                 fixed = list(lambda = mod$lambda))
-  
+
 }
 
 ### CREATE FN TO RETURN ODDS RATIO AFTER CHANGING INTERCEPT ####
 
 find_odds_ratio <- function(mod, newdata, x){
-  
+
   new_mod <- refit_mod(mod, x = x)
-  
+
   new_prob <- mean(predict(new_mod, newdata = newdata, type = "response", verbose = c("showpbar" = FALSE)))
   old_prob <- mean(predict(mod, newdata = newdata, type = "response", verbose = c("showpbar" = FALSE)))
-  
+
   new_odds <- new_prob/(1-new_prob)
   old_odds <- old_prob/(1-old_prob)
-  
+
   ## ALWAYS DO ODDS RATIO AS LARGEST/SMALLEST
   if (x > 0) {
     odds_ratio <- new_odds/old_odds
   } else {
     odds_ratio <- old_odds/new_odds
   }
-  
+
   return(odds_ratio)
-  
+
 }
 
 ### FUNCTION TO FEED INTO OPTIM THAT FINDS DIFFERENCE B/W ODDS RATIO AND GOAL
 ### direction: SHOULD BE 1 OR -1 TO DETERMINE WHETHER FUNCTION WILL ATTEMPT TO REDUCE OR INCREASE INTERCEPT
 ### goal: IS THE ODDS RATIO WE ARE TRYING TO REACH
 optim_odds_ratio <- function(par, direction = 1, goal = 1.25, mod, newdata) {
-  
+
   ## We optimise larger/smaller odds ratio, so goal must be >1
   if (goal <= 1) {
     stop("goal must be > 1")
   }
-  
+
   x <- par * direction
-  
+
   distance <- abs(goal - find_odds_ratio(mod, newdata, x))
-  
+
   return(distance)
-  
+
 }
 
 ### OPTIMISE UPPER AND LOWER INTERCEPT
 find_new_intercepts <- function(mod, newdata, goal = 1.25, ...) {
-  
+
   message("Optimise upper intercept")
   upper_x <- optim(par = c(0.25), fn = optim_odds_ratio, gr = NULL,
                    mod = mod, newdata = newdata, direction = 1,
                    method = "Brent", lower = 0, upper = 2, ...)
   upper_x_mod <- refit_mod(mod, x = upper_x$par)
-  
+
   message("Optimise lower intercept")
   lower_x <- optim(par = c(0.25), fn = optim_odds_ratio, gr = NULL,
                    mod = mod, newdata = newdata, direction = -1,
                    method = "Brent", lower = 0, upper = 2, ...)
   lower_x_mod <- refit_mod(mod, x = -1*lower_x$par)
-  
+
   tibble(mod_name = c("Decrease", "Increased", "Original"),
          mod = list(lower_x_mod, upper_x_mod, mod),
          x = c(-1*lower_x$par, upper_x$par, 0),
          goal = goal)
-  
+
 }
 
 ### FEMALE SURVIVAL ####
 
 ## Shift intercept of model and see how it affects predicted outcome
-F_changes <- find_new_intercepts(mod = F_surv_mixmod,
+F_changes <- find_new_intercepts(mod = modlist$allF,
                                  newdata = model_data$F_surv_data |>
-                                   filter(lubridate::year(birthdate) == 2010), goal = 1.25) |> 
+                                   dplyr::filter(year >= start_yr & year <= end_yr), goal = 1.25) |>
   mutate(VR = "femsurv")
 
 #### REDUCE SURV
 elasticity_modlist <- list(allF          = F_changes$mod[[1]],
                            #Postdisp males don't consider rank
-                           postdispM     = postMsurv_mixmod,
-                           predispM      = preMsurv_mixmod,
-                           twin          = twin_mixmod,
+                           postdispM     = modlist$postdispM,
+                           predispM      = modlist$predispM,
+                           twin          = modlist$twin,
                            #Male dispersal is the same in all cases
-                           disp          = disp_mixmod,
-                           primirepro    = primirepro_mixmod,
-                           nonprimirepro = nonprimirepro_mixmod)
+                           disp          = modlist$disp,
+                           primirepro    = modlist$primirepro,
+                           nonprimirepro = modlist$nonprimirepro)
 
 simulation_iterate(start_pops = start_pop_example,
                    return = FALSE,
@@ -142,13 +151,13 @@ simulation_iterate(start_pops = start_pop_example,
 #### INCREASE SURV
 elasticity_modlist <- list(allF          = F_changes$mod[[2]],
                            #Postdisp males don't consider rank
-                           postdispM     = postMsurv_mixmod,
-                           predispM      = preMsurv_mixmod,
-                           twin          = twin_mixmod,
+                           postdispM     = modlist$postdispM,
+                           predispM      = modlist$predispM,
+                           twin          = modlist$twin,
                            #Male dispersal is the same in all cases
-                           disp          = disp_mixmod,
-                           primirepro    = primirepro_mixmod,
-                           nonprimirepro = nonprimirepro_mixmod)
+                           disp          = modlist$disp,
+                           primirepro    = modlist$primirepro,
+                           nonprimirepro = modlist$nonprimirepro)
 
 simulation_iterate(start_pops = start_pop_example,
                    return = FALSE,
@@ -173,22 +182,22 @@ simulation_iterate(start_pops = start_pop_example,
 ### M Predisp SURVIVAL ####
 
 ## Shift intercept of model and see how it affects predicted outcome
-preM_changes <- find_new_intercepts(mod = preMsurv_mixmod,
+preM_changes <- find_new_intercepts(mod = modlist$predispM,
                                     newdata = model_data$PreM_surv_data |>
-                                      filter(lubridate::year(birthdate) == 2010),
-                                    goal = 1.25) |> 
+                                      dplyr::filter(year >= start_yr & year <= end_yr),
+                                    goal = 1.25) |>
   mutate(VR = "preM")
 
 #### REDUCE SURV
-elasticity_modlist <- list(allF          = F_surv_mixmod,
+elasticity_modlist <- list(allF          = modlist$allF,
                            #Postdisp males don't consider rank
-                           postdispM     = postMsurv_mixmod,
+                           postdispM     = modlist$postdispM,
                            predispM      = preM_changes$mod[[1]],
-                           twin          = twin_mixmod,
+                           twin          = modlist$twin,
                            #Male dispersal is the same in all cases
-                           disp          = disp_mixmod,
-                           primirepro    = primirepro_mixmod,
-                           nonprimirepro = nonprimirepro_mixmod)
+                           disp          = modlist$disp,
+                           primirepro    = modlist$primirepro,
+                           nonprimirepro = modlist$nonprimirepro)
 
 simulation_iterate(start_pops = start_pop_example,
                    return = FALSE,
@@ -211,15 +220,15 @@ simulation_iterate(start_pops = start_pop_example,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
 
 #### INCREASE SURV
-elasticity_modlist <- list(allF          = F_surv_mixmod,
+elasticity_modlist <- list(allF          = modlist$allF,
                            #Postdisp males don't consider rank
-                           postdispM     = postMsurv_mixmod,
+                           postdispM     = modlist$postdispM,
                            predispM      = preM_changes$mod[[2]],
-                           twin          = twin_mixmod,
+                           twin          = modlist$twin,
                            #Male dispersal is the same in all cases
-                           disp          = disp_mixmod,
-                           primirepro    = primirepro_mixmod,
-                           nonprimirepro = nonprimirepro_mixmod)
+                           disp          = modlist$disp,
+                           primirepro    = modlist$primirepro,
+                           nonprimirepro = modlist$nonprimirepro)
 
 simulation_iterate(start_pops = start_pop_example,
                    return = FALSE,
@@ -244,22 +253,22 @@ simulation_iterate(start_pops = start_pop_example,
 ### M Postdisp SURVIVAL ####
 
 ## Shift intercept of model and see how it affects predicted outcome
-postM_changes <- find_new_intercepts(mod = postMsurv_mixmod,
+postM_changes <- find_new_intercepts(mod = modlist$postdispM,
                                      newdata = model_data$PostM_surv_data |>
-                                       filter(lubridate::year(birthdate) == 2010),
-                                     goal = 1.25) |> 
+                                       dplyr::filter(year >= start_yr & year <= end_yr & !is.na(post_dispersal_status)),
+                                     goal = 1.25) |>
   mutate(VR = "postM")
 
 #### REDUCE SURV
-elasticity_modlist <- list(allF          = F_surv_mixmod,
+elasticity_modlist <- list(allF          = modlist$allF,
                            #Postdisp males don't consider rank
                            postdispM     = postM_changes$mod[[1]],
-                           predispM      = preMsurv_mixmod,
-                           twin          = twin_mixmod,
+                           predispM      = modlist$predispM,
+                           twin          = modlist$twin,
                            #Male dispersal is the same in all cases
-                           disp          = disp_mixmod,
-                           primirepro    = primirepro_mixmod,
-                           nonprimirepro = nonprimirepro_mixmod)
+                           disp          = modlist$disp,
+                           primirepro    = modlist$primirepro,
+                           nonprimirepro = modlist$nonprimirepro)
 
 simulation_iterate(start_pops = start_pop_example,
                    return = FALSE,
@@ -282,15 +291,15 @@ simulation_iterate(start_pops = start_pop_example,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
 
 #### INCREASE SURV
-elasticity_modlist <- list(allF          = F_surv_mixmod,
+elasticity_modlist <- list(allF          = modlist$allF,
                            #Postdisp males don't consider rank
                            postdispM     = postM_changes$mod[[2]],
-                           predispM      = preMsurv_mixmod,
-                           twin          = twin_mixmod,
+                           predispM      = modlist$predispM,
+                           twin          = modlist$twin,
                            #Male dispersal is the same in all cases
-                           disp          = disp_mixmod,
-                           primirepro    = primirepro_mixmod,
-                           nonprimirepro = nonprimirepro_mixmod)
+                           disp          = modlist$disp,
+                           primirepro    = modlist$primirepro,
+                           nonprimirepro = modlist$nonprimirepro)
 
 simulation_iterate(start_pops = start_pop_example,
                    return = FALSE,
@@ -317,22 +326,22 @@ simulation_iterate(start_pops = start_pop_example,
 ### Twin ####
 
 ## Shift intercept of model and see how it affects predicted outcome
-twin_changes <- find_new_intercepts(mod = twin_mixmod,
+twin_changes <- find_new_intercepts(mod = modlist$twin,
                                     newdata = model_data$F_twin_data |>
-                                      filter(lubridate::year(birthdate) == 2010),
-                                    goal = 1.25) |> 
+                                      dplyr::filter(year >= start_yr & year <= end_yr),
+                                    goal = 1.25) |>
   mutate(VR = "twin")
 
 #### REDUCE SURV
-elasticity_modlist <- list(allF          = F_surv_mixmod,
+elasticity_modlist <- list(allF          = modlist$allF,
                            #Postdisp males don't consider rank
-                           postdispM     = postMsurv_mixmod,
-                           predispM      = preMsurv_mixmod,
+                           postdispM     = modlist$postdispM,
+                           predispM      = modlist$predispM,
                            twin          = twin_changes$mod[[1]],
                            #Male dispersal is the same in all cases
-                           disp          = disp_mixmod,
-                           primirepro    = primirepro_mixmod,
-                           nonprimirepro = nonprimirepro_mixmod)
+                           disp          = modlist$disp,
+                           primirepro    = modlist$primirepro,
+                           nonprimirepro = modlist$nonprimirepro)
 
 simulation_iterate(start_pops = start_pop_example,
                    return = FALSE,
@@ -355,15 +364,15 @@ simulation_iterate(start_pops = start_pop_example,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
 
 #### INCREASE SURV
-elasticity_modlist <- list(allF          = F_surv_mixmod,
+elasticity_modlist <- list(allF          = modlist$allF,
                            #Postdisp males don't consider rank
-                           postdispM     = postMsurv_mixmod,
-                           predispM      = preMsurv_mixmod,
+                           postdispM     = modlist$postdispM,
+                           predispM      = modlist$predispM,
                            twin          = twin_changes$mod[[2]],
                            #Male dispersal is the same in all cases
-                           disp          = disp_mixmod,
-                           primirepro    = primirepro_mixmod,
-                           nonprimirepro = nonprimirepro_mixmod)
+                           disp          = modlist$disp,
+                           primirepro    = modlist$primirepro,
+                           nonprimirepro = modlist$nonprimirepro)
 
 simulation_iterate(start_pops = start_pop_example,
                    return = FALSE,
@@ -389,22 +398,22 @@ simulation_iterate(start_pops = start_pop_example,
 ### Primi ####
 
 ## Shift intercept of model and see how it affects predicted outcome
-primi_changes <- find_new_intercepts(mod = primirepro_mixmod,
-                                     newdata = model_data$F_repro_primi |>
-                                       filter(lubridate::year(birthdate) == 2010),
-                                     goal = 1.25) |> 
+primi_changes <- find_new_intercepts(mod = modlist$primirepro,
+                                     newdata = model_data$F_repro_primi  |>
+                                       dplyr::filter(year >= start_yr & year <= end_yr),
+                                     goal = 1.25) |>
   mutate(VR = "primi")
 
 #### REDUCE SURV
-elasticity_modlist <- list(allF          = F_surv_mixmod,
+elasticity_modlist <- list(allF          = modlist$allF,
                            #Postdisp males don't consider rank
-                           postdispM     = postMsurv_mixmod,
-                           predispM      = preMsurv_mixmod,
-                           twin          = twin_mixmod,
+                           postdispM     = modlist$postdispM,
+                           predispM      = modlist$predispM,
+                           twin          = modlist$twin,
                            #Male dispersal is the same in all cases
-                           disp          = disp_mixmod,
+                           disp          = modlist$disp,
                            primirepro    = primi_changes$mod[[1]],
-                           nonprimirepro = nonprimirepro_mixmod)
+                           nonprimirepro = modlist$nonprimirepro)
 
 simulation_iterate(start_pops = start_pop_example,
                    return = FALSE,
@@ -427,15 +436,15 @@ simulation_iterate(start_pops = start_pop_example,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
 
 #### INCREASE SURV
-elasticity_modlist <- list(allF          = F_surv_mixmod,
+elasticity_modlist <- list(allF          = modlist$allF,
                            #Postdisp males don't consider rank
-                           postdispM     = postMsurv_mixmod,
-                           predispM      = preMsurv_mixmod,
-                           twin          = twin_mixmod,
+                           postdispM     = modlist$postdispM,
+                           predispM      = modlist$predispM,
+                           twin          = modlist$twin,
                            #Male dispersal is the same in all cases
-                           disp          = disp_mixmod,
+                           disp          = modlist$disp,
                            primirepro    = primi_changes$mod[[2]],
-                           nonprimirepro = nonprimirepro_mixmod)
+                           nonprimirepro = modlist$nonprimirepro)
 
 simulation_iterate(start_pops = start_pop_example,
                    return = FALSE,
@@ -460,21 +469,21 @@ simulation_iterate(start_pops = start_pop_example,
 ### Non-Primi ####
 
 ## Shift intercept of model and see how it affects predicted outcome
-nonprimi_changes <- find_new_intercepts(mod = nonprimirepro_mixmod,
+nonprimi_changes <- find_new_intercepts(mod = modlist$nonprimirepro,
                                         newdata = model_data$F_repro_nonprimi |>
-                                          filter(lubridate::year(birthdate) == 2010),
-                                        goal = 1.25) |> 
+                                          dplyr::filter(year >= start_yr & year <= end_yr),
+                                        goal = 1.25) |>
   mutate(VR = "nonprimi")
 
 #### REDUCE SURV
-elasticity_modlist <- list(allF          = F_surv_mixmod,
+elasticity_modlist <- list(allF          = modlist$allF,
                            #Postdisp males don't consider rank
-                           postdispM     = postMsurv_mixmod,
-                           predispM      = preMsurv_mixmod,
-                           twin          = twin_mixmod,
+                           postdispM     = modlist$postdispM,
+                           predispM      = modlist$predispM,
+                           twin          = modlist$twin,
                            #Male dispersal is the same in all cases
-                           disp          = disp_mixmod,
-                           primirepro    = primirepro_mixmod,
+                           disp          = modlist$disp,
+                           primirepro    = modlist$primirepro,
                            nonprimirepro = nonprimi_changes$mod[[1]])
 
 simulation_iterate(start_pops = start_pop_example,
@@ -498,14 +507,14 @@ simulation_iterate(start_pops = start_pop_example,
                    parallel = TRUE, CPUcores = 48, .parallel.min = 1)
 
 #### INCREASE SURV
-elasticity_modlist <- list(allF          = F_surv_mixmod,
+elasticity_modlist <- list(allF          = modlist$allF,
                            #Postdisp males don't consider rank
-                           postdispM     = postMsurv_mixmod,
-                           predispM      = preMsurv_mixmod,
-                           twin          = twin_mixmod,
+                           postdispM     = modlist$postdispM,
+                           predispM      = modlist$predispM,
+                           twin          = modlist$twin,
                            #Male dispersal is the same in all cases
-                           disp          = disp_mixmod,
-                           primirepro    = primirepro_mixmod,
+                           disp          = modlist$disp,
+                           primirepro    = modlist$primirepro,
                            nonprimirepro = nonprimi_changes$mod[[2]])
 
 simulation_iterate(start_pops = start_pop_example,
