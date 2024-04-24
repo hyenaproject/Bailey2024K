@@ -1404,6 +1404,11 @@ marginalK_df <- estK %>%
   dplyr::summarise(globalK = median(.data$K),
                    lower = min(.data$K),
                    upper = max(.data$K))
+
+range(estK$K)
+```
+```{r}
+median(estK$K)
 ```
 
 ```{r}

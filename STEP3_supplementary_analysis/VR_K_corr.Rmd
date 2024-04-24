@@ -43,7 +43,7 @@ Kplot_data <- purrr::map_df(.x = years,
                               
                               pb_yr$tick()
                               
-                              txt_files <- list.files(here(paste0("./analysis/MS_preliminary_results/", folder_name, "/", year)),
+                              txt_files <- list.files(here(paste0("./MS_preliminary_results/", folder_name, "/", year)),
                                                       pattern = ".txt", full.names = TRUE)
                               
                               allsims <- purrr::map_df(.x = txt_files,
@@ -79,7 +79,7 @@ Extract observed VRs from model frame data (should be more easily accessible...)
 
 ```{r}
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
-model_data <- readRDS(here::here("./analysis/MS_preliminary_results/results/data/model_data.RDS"))
+model_data <- readRDS(here::here("./MS_preliminary_results/results/data/model_data.RDS"))
 ```
 
 ```{r}
@@ -279,7 +279,7 @@ K_data_sex <- purrr::map_df(.x = years,
                               
                               pb_yr$tick()
                               
-                              txt_files <- list.files(here(paste0("./analysis/MS_preliminary_results/", folder_name, "/", year)),
+                              txt_files <- list.files(here(paste0("./MS_preliminary_results/", folder_name, "/", year)),
                                                       pattern = ".txt", full.names = TRUE)
                               
                               allsims <- purrr::map_df(.x = txt_files,

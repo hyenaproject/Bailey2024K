@@ -12,12 +12,15 @@ library(hyenaR)
 library(ggplot2)
 library(spaMM)
 
+start_year <- 1997
+end_year <- 2022
+
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
-model_data <- readRDS(here::here("./analysis/data/model_data.RDS"))
+model_data <- readRDS(here::here("./data/model_data.RDS"))
 ```
 
 ```{r}
-Kplot_data <- readRDS(here::here("./analysis/data/Kplot_data.RDS"))
+Kplot_data <- readRDS(here::here("./data/Kplot_data.RDS"))
 ```
 
 ```{r}
@@ -123,12 +126,12 @@ plot_data <- plot_data |>
                                         "femsurv", "preM", "postM",
                                         "primi", "nonprimi", "twin"),
          VR_full = forcats::fct_recode(VR_full,
-                                       `Female survival` = "femsurv",
-                                       `Male survival\n (juvenile)` = "preM",
-                                       `Male survival\n (adult)` = "postM",
-                                       `Reproduction\n(primiparous)` = "primi",
-                                       `Reproduction\n(non-primiparous)` = "nonprimi",
-                                       `Twinning` = "twin"))
+                                       `a) Female survival` = "femsurv",
+                                       `b) Male survival\n (juvenile)` = "preM",
+                                       `c) Male survival\n (adult)` = "postM",
+                                       `d) Reproduction\n(primiparous)` = "primi",
+                                       `e) Reproduction\n(non-primiparous)` = "nonprimi",
+                                       `f) Twinning` = "twin"))
 
 ylim = c(0, max(plot_data$deltaK$mean) + 20)
   
@@ -146,17 +149,17 @@ ggplot() +
   coord_cartesian(clip = "off",
                   expand = FALSE,
                   ylim = ylim,
-                  xlim = c(1995, 2022)) +
+                  xlim = c(1995, 2023)) +
   scale_y_continuous(breaks = seq(0, 300, 50)) +
   annotate(geom = "segment",
-           y = 0, yend = -20,
+           y = 0, yend = -12,
            x = seq(1995, 2020, by = 5),
            xend = seq(1995, 2020, by = 5),
            lineend = "round", linejoin = "round") +
   annotate(geom = "segment",
-           y = 0, yend = -10,
-           x = seq(1995, 2022, by = 1),
-           xend = seq(1995, 2022, by = 1),
+           y = 0, yend = -7,
+           x = seq(1995, 2023, by = 1),
+           xend = seq(1995, 2023, by = 1),
            lineend = "round", linejoin = "round") +
   facet_wrap(facets = ~VR_full) +
   scale_colour_discrete(guide = NULL) +
@@ -166,13 +169,22 @@ ggplot() +
   theme(axis.text = element_text(colour = "black"),
         axis.text.x = element_text(margin = margin(t = 7)),
         axis.line.x = element_blank(),
+        axis.title.y = element_text(margin = margin(r = 10)),
         strip.text = element_text(colour = "black"),
         strip.background = element_rect(linewidth = 0.5),
+        panel.background = element_rect(linewidth = 0.5, colour = "black"),
         panel.spacing = unit(5, units = "mm"),
         plot.margin = margin(r = 5, l = 5, b = 5, t = 5))
 
-ggsave(filename = here::here("./STEP3_supplementary_analysis/SX_elasticity/plots/supp_elasticity_plot_oddsratio_absK_new.png"), dpi = 600,
+ggsave(filename = here::here("./STEP3_supplementary_analysis/SX_elasticity/plots/supp_elasticity_plot_oddsratio_absK.png"), dpi = 600,
        width = 8, height = 5)
 ```
 
+Extract summary stats for text
 
+```{r}
+plot_data |> 
+  group_by(VR) |> 
+  summarise(min = min(deltaK$mean),
+            max = max(deltaK$mean))
+```

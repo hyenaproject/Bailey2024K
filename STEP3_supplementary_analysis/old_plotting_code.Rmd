@@ -43,7 +43,7 @@ Kplot_data <- purrr::map_df(.x = years,
                               
                               pb_yr$tick()
                               
-                              txt_files <- list.files(here(paste0("./analysis/MS_preliminary_results/", folder_name, "/", year)),
+                              txt_files <- list.files(here(paste0("./MS_preliminary_results/", folder_name, "/", year)),
                                                       pattern = ".txt", full.names = TRUE)
                               
                               allsims <- purrr::map_df(.x = txt_files,
@@ -206,7 +206,7 @@ Kplot_data_raw <- purrr::map_df(.x = years,
                                   
                                   pb_yr$tick()
                                   
-                                  txt_files <- list.files(here(paste0("./analysis/MS_preliminary_results/", folder_name, "/", year)),
+                                  txt_files <- list.files(here(paste0("./MS_preliminary_results/", folder_name, "/", year)),
                                                           pattern = ".txt", full.names = TRUE)
                                   
                                   allsims <- purrr::map_df(.x = txt_files,
