@@ -49,7 +49,7 @@ system.time({preMsurv_mixmod <- spaMM::fitme(surv ~ poly(age, 2)*rank_category2 
 system.time({postMsurv_mixmod <- spaMM::fitme(surv ~ poly(age, 2)*post_dispersal_status +
                                                 clan_size +
                                                 start_clan + (1|start_clan:year),
-                                              data = model_data$PostM_surv_data |> dplyr::filter(year >= start_yr & year <= end_yr),
+                                              data = model_data$PostM_surv_data |> dplyr::filter(year >= start_yr & year <= end_yr & !is.na(post_dispersal_status)),
                                               family = binomial(link = "logit"), method = "PQL/L")})
 
 ### Twin ####
