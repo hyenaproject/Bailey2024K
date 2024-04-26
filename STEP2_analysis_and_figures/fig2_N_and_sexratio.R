@@ -7,7 +7,7 @@ library(dplyr)
 
 start_year  <- 1997
 end_year    <- 2022
-scale <- "month"
+scale <- "year"
 
 ## Extract data
 ### Population size separated by age and sex
@@ -204,9 +204,13 @@ if (scale == "month"){
   ### Calculate sex ratio (male/all females)
   ratios <- real_pop_separate %>%
     dplyr::mutate(sex_ratio = ad_male/(ad_male + ad_fem),
-                  age_ratio = young/(young + ad_male + ad_fem)) %>%
-    tidyr::pivot_longer(cols = sex_ratio:age_ratio) |>
-    dplyr::filter(lubridate::year(date) <= end_year)
+                  age_ratio = young/(young + ad_male + ad_fem),
+                  to = date + lubridate::years(1)) |>
+    dplyr::filter(lubridate::year(date) >= start_year & lubridate::year(date) <= end_year) |>
+    tidyr::pivot_longer(cols = sex_ratio:age_ratio, names_to = "ratio_type", values_to = "ratio_val") |>
+    group_by(ratio_type) |>
+    tidyr::pivot_longer(cols = c(date, to)) |>
+    ungroup()
 
   # PLOT
 
@@ -218,7 +222,7 @@ if (scale == "month"){
     # filter(name != "ad_unk") %>%
     dplyr:::mutate(name = factor(name, levels = c("young", "ad_male", "ad_fem")),
                    adult_edge = name != "ad_fem") |>
-    filter(lubridate::year(date) <= end_year)
+    filter(lubridate::year(date) >= start_year & lubridate::year(date) <= end_year)
 
   end_vals <- plot_data %>%
     group_by(name) %>%
@@ -230,12 +234,12 @@ if (scale == "month"){
 
   sex_vals <- plot_data %>%
     group_by(name) %>%
-    slice(n() - 10) %>%
+    slice(n() - 1) %>%
     filter(name != "young")
 
   N_plot <- ggplot(data = plot_data) +
-    geom_area(aes(x = date, y = value, fill = name,
-                  linewidth = adult_edge), colour = "black") +
+    geom_col(aes(x = date, y = value, fill = name),
+             colour = "black", linewidth = 0.25) +
     ## KRUUK ESTIMATE
     geom_text(aes(x = as.Date("1999-01-01"),
                   y = (385 + 40)),
@@ -243,7 +247,7 @@ if (scale == "month"){
               hjust = 1) +
     annotate(geom = "segment",
              x = as.Date("1995-01-01"),
-             xend = end_vals$date[1] - 100,
+             xend = end_vals$date[1] + 200,
              y = 385, yend = 385,
              lineend = "round", linejoin = "round", lty = 2,
              linewidth = 0.5) +
@@ -266,35 +270,35 @@ if (scale == "month"){
              lineend = "round", linejoin = "round") +
     ## LABEL TEXT
     annotate(geom = "segment",
-             x = end_vals$date[1] + 100,
-             xend = end_vals$date[1] + 100,
+             x = end_vals$date[1] + 225,
+             xend = end_vals$date[1] + 225,
              y = 5, yend = end_vals$value[2] - 5,
              lineend = "round", linejoin = "round", linewidth = 0.75) +
     annotate(geom = "segment",
-             x = end_vals$date[1] + 100,
-             xend = end_vals$date[1] + 100,
+             x = end_vals$date[1] + 225,
+             xend = end_vals$date[1] + 225,
              y = end_vals$value[2] + 5, yend = end_vals$value[2] + end_vals$value[1] - 5,
              lineend = "round", linejoin = "round", linewidth = 0.75) +
     ## ADD TEXT FOR AD/YOUNG
     annotate(geom = "text",
-             x = end_vals$date[1] + 175,
+             x = end_vals$date[1] + 300,
              y = mean(c(5, end_vals$value[2] - 5)),
              label = "ADULT", hjust = 0, size = 4) +
     annotate(geom = "text",
-             x = end_vals$date[1] + 175,
+             x = end_vals$date[1] + 300,
              y = mean(c(end_vals$value[2] + 5, end_vals$value[2] + end_vals$value[1] - 5)),
              label = "JUVENILE", hjust = 0, size = 4) +
     ## ADD TEXT FOR MALE/FEMALE
     annotate(geom = "text",
-             x = sex_vals$date[1] + 100,
+             x = sex_vals$date[1] + 425,
              y = mean(c(sex_vals$value[2], sex_vals$value[2] + sex_vals$value[1])),
              label = "MALE", hjust = 1, size = 3.5,
-             colour = "grey95") +
+             colour = "white") +
     annotate(geom = "text",
-             x = sex_vals$date[1] + 100,
+             x = sex_vals$date[1] + 425,
              y = mean(c(0, sex_vals$value[2])),
              label = "FEMALE", hjust = 1, size = 3.5,
-             colour = "grey20") +
+             colour = "black") +
     scale_fill_manual(values = rev(c("grey90", "grey55", "grey20"))) +
     scale_linewidth_discrete(range = c(0, 0.75)) +
     scale_x_date(breaks = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 years"),
@@ -320,11 +324,11 @@ if (scale == "month"){
   ## Sex and age ratio
 
   end_vals <- ratios %>%
-    group_by(name) %>%
+    group_by(ratio_type) %>%
     slice(n())
 
   (ratios_plot <- ggplot() +
-      geom_line(data = ratios, aes(x = date, y = value, colour = name, group = name)) +
+      geom_line(data = ratios, aes(x = value, y = ratio_val, colour = ratio_type, group = ratio_type)) +
       annotate(geom = "segment",
                x = as.Date("1995-01-01"),
                xend = as.Date("2025-01-01"),
@@ -349,8 +353,8 @@ if (scale == "month"){
                y = seq(0, 1, 0.25), yend = seq(0, 1, 0.25),
                lineend = "round", linejoin = "round") +
       ## LABELS
-      geom_text(aes(x = as.Date("2023-10-01"),
-                    y = end_vals$value + c(0, -0.025), colour = end_vals$name),
+      geom_text(aes(x = as.Date("2023-06-01"),
+                    y = end_vals$ratio_val + c(-0.05, 0.06), colour = end_vals$ratio_type),
                 label = c("Proportion of\njuveniles", "Proportion of\nadult males"), size = 3,
                 hjust = 0.5, lineheight = 0.75) +
       scale_colour_manual(values = c("red", "grey10")) +

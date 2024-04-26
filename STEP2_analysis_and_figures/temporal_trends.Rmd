@@ -30,8 +30,9 @@ Define which simulation type we're using
 
 ```{r params}
 start_year  <- 1997
-end_year    <- 2021
-scale <- "month"
+end_year    <- 2022
+growth_period_until <- 2011
+scale <- "year"
 ```
 
 # Extract data
@@ -91,19 +92,19 @@ if (!file.exists(here::here("./data/Kplot_data.RDS"))) {
 Extract real pop data over time at 1 month and 6mo intervals.
 
 ```{r N_data}
+### GENERATED IN STEP0_prepare_data/demographic_data.R
 if (scale == "year"){
-  real_pop <- readRDS(here::here("./data/Nplot_data.RDS"))  
+  real_pop <- readRDS(here::here("./data/Nplot_data_year.RDS"))
+  real_pop_separate <- readRDS(here::here("./data/Nplot_data_separate_year.RDS"))
 } else if (scale == "month"){
   real_pop <- readRDS(here::here("./data/Nplot_data_month.RDS")) 
+  real_pop_separate <- readRDS(here::here("./data/Nplot_data_separate_1month.RDS"))
 }
 ```
 
 Prepare sex and age ratio data
 
 ```{r N_data_separate}
-### GENERATED IN STEP0_prepare_data/demographic_data.R
-real_pop_separate <- readRDS(here::here("./data/Nplot_data_separate_1month.RDS"))
-
 ### Calculate sex ratio (male/all females)
 ratios <- real_pop_separate %>% 
   mutate(sex_ratio = ad_male/(ad_male + ad_fem),
@@ -125,64 +126,85 @@ real_pop_separate %>%
   filter(total_ad == max(total_ad))
 ```
 
-What was the rate of growth during this period?
+## Trend in whole period
 
-```{r growthrateN}
-slope_data <- real_pop %>% 
-  ## Use 1st May b/c we calculated over whole months
-  ## Numbers are similar.
-  filter(date %in% as.Date(c("1996-05-01", "2012-04-01")))
+```{r}
+real_pop_growth <- real_pop |> 
+  filter(lubridate::year(date) <= end_year) |> 
+  mutate(year = lubridate::year(date),
+         n = 1:n())
 
-(max(slope_data$pop_size) - min(slope_data$pop_size))/16
+N_model <- fitme(pop_size ~ year + AR1(1|n), data = real_pop_growth, family = "gaussian")
+N_model_null <- fitme(pop_size ~ 1 + AR1(1|n), data = real_pop_growth, family = "gaussian")
 
-## If we take numbers at exact start date
-(max(slope_data$pop_size) - (119+65))/16
+summary(N_model)
 ```
 
-And if we tried to calculate the slope w/ CI for this growth period?
+```{r}
+LRT(N_model, N_model_null)
+```
 
-```{r growthNmodel}
-## USES HYENAR, WHICH REQUIRES FULL DB TO BE LOADED
-# mod_data <- data.frame(date = as.Date("1996-04-01"),
-#                        pop_size = fetch_pop_number(main.clans = TRUE, at = find_pop_date.observation.first())) %>% 
-#   bind_rows(real_pop) %>% 
-#   filter(date %in% seq.Date(as.Date("1996-04-01"),
-#                             as.Date("2012-04-01"), "6 month")) %>% 
-#   mutate(n = 1:n())
-# 
-# mod <- spaMM::fitme(pop_size ~ n + AR1(1|n), data = mod_data)
-# 
-# summary(mod)
-# 
-# 
-# library(DHARMa)
-# simresid <- simulateResiduals(mod, n = 1000)
-# 
-# testUniformity(simresid)
-# 
-# summary(mod)
+```{r}
+confint(N_model, parm = "year")
+```
+
+## Trend during growth period
+
+```{r}
+real_pop_growth <- real_pop |> 
+  filter(lubridate::year(date) <= growth_period_until) |> 
+  mutate(year = lubridate::year(date),
+         n = 1:n())
+
+N_model <- fitme(pop_size ~ year + AR1(1|n), data = real_pop_growth, family = "gaussian")
+N_model_null <- fitme(pop_size ~ 1 + AR1(1|n), data = real_pop_growth, family = "gaussian")
+
+summary(N_model)
+```
+
+```{r}
+LRT(N_model, N_model_null)
+```
+
+```{r}
+confint(N_model, parm = "year")
+```
+
+## Trend after growth period
+
+```{r}
+real_pop_growth <- real_pop |> 
+  filter(lubridate::year(date) > growth_period_until) |> 
+  mutate(year = lubridate::year(date),
+         n = 1:n())
+
+N_model <- fitme(pop_size ~ year + AR1(1|n), data = real_pop_growth, family = "gaussian")
+N_model_null <- fitme(pop_size ~ 1 + AR1(1|n), data = real_pop_growth, family = "gaussian")
+
+summary(N_model)
+```
+
+```{r}
+LRT(N_model, N_model_null)
+```
+
+```{r}
+confint(N_model, parm = "year")
 ```
 
 ## Fluctuation in N following growth
 
-How can we describe the period after 2012?
+How can we describe the period after growth period?
 
 ```{r}
-post2012_data <- real_pop %>% 
+postgrowth_data <- real_pop %>% 
   ## Use 1st May b/c we calculated over whole months
   ## Numbers are similar.
-  filter(date > as.Date("2012-04-01"))
+  filter(lubridate::year(date) > growth_period_until)
 
-median(post2012_data$pop_size)
+median(postgrowth_data$pop_size)
 
-range(post2012_data$pop_size)
-```
-
-Minimum size during last outbreak.
-
-```{r}
-post2012_data %>% 
-  filter(pop_size == min(pop_size))
+range(postgrowth_data$pop_size)
 ```
 
 # Carrying capacity (K)
@@ -215,7 +237,8 @@ Estimate over the full period (because we're not just focusing in growth anymore
 
 ```{r}
 Kplot_data_sub <- Kplot_data %>% 
-  filter(year <= end_year)
+  filter(year <= end_year) |> 
+  mutate(n = 1:n())
 
 poisson_data <- Kplot_data_sub %>% 
   mutate(globalK = as.integer(globalK))
@@ -224,7 +247,7 @@ poisson_data <- Kplot_data_sub %>%
 #### Model 1: Poisson
 
 ```{r}
-K_model1 <- fitme(globalK ~ year, data = poisson_data, family = "poisson")
+K_model1 <- fitme(globalK ~ year + AR1(1|n), data = poisson_data, family = "poisson")
 ```
 
 ```{r}
@@ -252,7 +275,7 @@ Could we achieve the same thing just using Gaussian model?
 
 ```{r}
 ## Use the same Poisson data for AIC are comparable
-K_model2 <- fitme(globalK ~ year, data = poisson_data, family = "gaussian")
+K_model2 <- fitme(globalK ~ year + AR1(1|n), data = poisson_data, family = "gaussian")
 ```
 
 ```{r}
@@ -278,7 +301,7 @@ Temporal auto-correlation seems ok.
 #### Model 3: Negative-binomial
 
 ```{r}
-K_model3 <- fitme(globalK ~ year, data = poisson_data, family = spaMM::negbin2())
+K_model3 <- fitme(globalK ~ year + AR1(1|n), data = poisson_data, family = spaMM::negbin2())
 ```
 
 ```{r}
@@ -323,44 +346,13 @@ LRT to compare model to null
 global_mod <- fitme(globalK ~ year, data = poisson_data, family = "gaussian")
 null_mod   <- fitme(globalK ~ 1, data = poisson_data, family = "gaussian")
 
+summary(global_mod)
+```
+```{r}
 ## #Asymptotic pvalue for consistency
 LRT(global_mod, null_mod)
 # LRT_result_gaussian <- LRT(global_mod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
 # data.frame(basic = LRT_result_gaussian$basicLRT$p_value, bartlett = LRT_result_gaussian$BartBootLRT$p_value, bootstrap = LRT_result_gaussian$rawBootLRT$p_value)
-```
-
-Summary of full model
-
-```{r}
-summary(global_mod)
-```
-
-CI of year term
-
-```{r}
-spaMM::confint.HLfit(global_mod, parm = "year", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
-```
-
-Fixef term
-
-```{r}
-fixef(global_mod)[2]
-```
-
-##### Negbin model
-
-LRT to compare model to null
-
-```{r}
-global_mod <- fitme(globalK ~ year + 1, data = poisson_data, family = spaMM::negbin2())
-null_mod   <- fitme(globalK ~ 1, data = poisson_data, family = spaMM::negbin2())
-
-## Asympototic for consistency
-LRT(global_mod, null_mod)
-# LRT_result_poisson <- LRT(global_mod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
-# data.frame(basic = LRT_result_poisson$basicLRT$p_value,
-#            bartlett = LRT_result_poisson$BartBootLRT$p_value,
-#            bootstrap = LRT_result_poisson$rawBootLRT$p_value)
 ```
 
 Summary of full model
@@ -486,7 +478,9 @@ summary(K_model_perclan_gaussian)
 ```{r LRT_Ktc}
 global_mod <- fitme(median ~ year:name + name + AR1(1|n), data = plot_data, family = "gaussian")
 null_mod   <- fitme(median ~ name + AR1(1|n), data = plot_data, family = "gaussian")
-
+summary(global_mod)
+```
+```{r}
 ## Need to bootstrap this, it takes some time
 LRT(global_mod, null_mod)
 # data.frame(basic = LRT_result_gaussian$basicLRT$p_value, bartlett = LRT_result_gaussian$BartBootLRT$p_value, bootstrap = LRT_result_gaussian$rawBootLRT$p_value)
@@ -529,9 +523,11 @@ spaMM::confint.HLfit(global_mod, parm = "year:nameT", boot_args = list(nsim = 99
 ## Kt in growth period
 
 ```{r}
-K_model_growthperiod <- fitme(globalK ~ year, data = poisson_data %>% filter(year <= 2012), family = "gaussian")
-null_mod <- fitme(globalK ~ 1, data = poisson_data %>% filter(year <= 2012), family = "gaussian")
-
+K_model_growthperiod <- fitme(globalK ~ year + AR1(1|n), data = poisson_data %>% filter(year <= growth_period_until), family = "gaussian")
+null_mod <- fitme(globalK ~ 1 + AR1(1|n), data = poisson_data %>% filter(year <= growth_period_until), family = "gaussian")
+summary(K_model_growthperiod)
+```
+```{r}
 ## Asympototic for consistency
 LRT(K_model_growthperiod, null_mod)
 # LRT(K_model_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
@@ -549,11 +545,86 @@ confint(K_model_growthperiod, parm = "year", boot_args = list(nsim = 999, nb_cor
 
 ```{r}
 K_model_perclan_growthperiod <- fitme(median ~ year:name + name + AR1(1|n),
-                                      data = plot_data %>% filter(year <= 2012), family = "gaussian")
+                                      data = plot_data %>% filter(year <= growth_period_until), family = "gaussian")
 
 null_mod <- fitme(median ~ name + AR1(1|n),
-                  data = plot_data %>% filter(year <= 2012), family = "gaussian")
+                  data = plot_data %>% filter(year <= growth_period_until), family = "gaussian")
+summary(K_model_perclan_growthperiod)
+```
+```{r}
+## Asympototic for consistency
+LRT(K_model_perclan_growthperiod, null_mod)
+# LRT(K_model_perclan_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+```
 
+```{r}
+summary(K_model_perclan_growthperiod)
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameA", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameE", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameF", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameL", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameM", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameN", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameS", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+```{r}
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameT", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+```
+
+## Kt in growth period
+
+```{r}
+K_model_growthperiod <- fitme(globalK ~ year + AR1(1|n), data = poisson_data %>% filter(year > growth_period_until), family = "gaussian")
+null_mod <- fitme(globalK ~ 1 + AR1(1|n), data = poisson_data %>% filter(year > growth_period_until), family = "gaussian")
+summary(K_model_growthperiod)
+```
+```{r}
+## Asympototic for consistency
+LRT(K_model_growthperiod, null_mod)
+# LRT(K_model_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+```
+
+```{r}
+summary(K_model_growthperiod)
+```
+
+```{r}
+confint(K_model_growthperiod, parm = "year", boot_args = list(nsim = 999, nb_cores = 10, seed = 123))
+```
+
+## Ktc after growth period
+
+```{r}
+K_model_perclan_growthperiod <- fitme(median ~ year:name + name + AR1(1|n),
+                                      data = plot_data %>% filter(year > growth_period_until), family = "gaussian")
+
+null_mod <- fitme(median ~ name + AR1(1|n),
+                  data = plot_data %>% filter(year > growth_period_until), family = "gaussian")
+summary(K_model_perclan_growthperiod)
+```
+```{r}
 ## Asympototic for consistency
 LRT(K_model_perclan_growthperiod, null_mod)
 # LRT(K_model_perclan_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
@@ -602,7 +673,7 @@ Descriptive stats
 ```{r}
 real_pop_separate %>% 
   mutate(sexratio = ad_male/(ad_male + ad_fem)) %>% 
-  filter(lubridate::year(date) <= 2022) |> 
+  filter(lubridate::year(date) <= end_year) |> 
   summarise(median = median(sexratio),
             min = min(sexratio),
             max = max(sexratio))
@@ -610,11 +681,10 @@ real_pop_separate %>%
 
 ### Sex ratio mod (binomial)
 
-Do this at every 6 months to be comparable
 
 ```{r}
 ratio_data <- real_pop_separate %>% 
-  filter(lubridate::year(date) <= 2022) |> 
+  filter(lubridate::year(date) <= end_year) |> 
   filter(lubridate::month(date) %in% c(1, 7)) %>% 
   mutate(n = 1:n())
 sexratio_mod <- fitme(cbind(ad_male, ad_fem) ~ n, data = ratio_data, family = "binomial")
@@ -652,14 +722,17 @@ acf(residuals(sexratio_mod2))
 
 ```{r}
 global_mod <- fitme(cbind(ad_male, ad_fem) ~ n + AR1(1|n), data = ratio_data, family = "binomial")
-null_mod   <- fitme(cbind(ad_male, ad_fem) ~ AR1(1|n), data = ratio_data, family = "binomial")
+null_mod   <- fitme(cbind(ad_male, ad_fem) ~ 1 + AR1(1|n), data = ratio_data, family = "binomial")
 
+summary(global_mod)
+```
+```{r}
 ## Fails with bootstrap...is it because we're using cbind?!
 LRT(global_mod, null_mod)
 ```
 
 ```{r}
-spaMM::confint.HLfit(global_mod, parm = "n", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+confint(global_mod, parm = "n")
 ```
 
 ## Age ratio
@@ -669,7 +742,7 @@ Descriptive stats
 ```{r}
 real_pop_separate %>% 
   mutate(sexratio = young/(young + ad_male + ad_fem)) %>% 
-  filter(lubridate::year(date) <= 2022) |> 
+  filter(lubridate::year(date) <= end_year) |> 
   summarise(median = median(sexratio),
             min = min(sexratio),
             max = max(sexratio))
@@ -714,14 +787,17 @@ acf(residuals(ageratio_mod2))
 
 ```{r}
 global_mod <- fitme(cbind(young, ad_male + ad_fem) ~ n + AR1(1|n), data = ratio_data, family = "binomial")
-null_mod   <- fitme(cbind(young, ad_male + ad_fem) ~ AR1(1|n), data = ratio_data, family = "binomial")
+null_mod   <- fitme(cbind(young, ad_male + ad_fem) ~ 1 + AR1(1|n), data = ratio_data, family = "binomial")
 
+summary(global_mod)
+```
+```{r}
 ## Fails with bootstrap, because we're using cbind?
 LRT(global_mod, null_mod)
 ```
 
 ```{r}
-spaMM::confint.HLfit(global_mod, parm = "n", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+confint(global_mod, parm = "n")
 ```
 
 

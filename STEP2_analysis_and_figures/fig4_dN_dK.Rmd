@@ -522,15 +522,20 @@ Plot
    geom_errorbar(data = dN_data_errorbar2, aes(x = median, ymin = lower, ymax = upper), width = 0) +
    geom_point(data = plot_data4b, aes(x = median, y = lambdaN),
               shape = 21, fill = "grey50", colour = "black") + 
-   geom_point(data = plot_data4b %>% filter(year %in% c(2018, 2019)), aes(x = median, y = lambdaN),
+   geom_point(data = plot_data4b %>% filter(year %in% c(2018, 2019, 2001, 2006)), aes(x = median, y = lambdaN),
               shape = 21, colour = "black", fill = "red", size = 2) +
    #Add year text
-   geom_text_repel(data = plot_data4b %>% filter(year %in% c(2018, 2019, 2001, 2006)), aes(x = median, y = lambdaN, label = year),
-                   force = 7, size = 2.5, max.overlaps = 14) +
+   geom_text(data = plot_data4b %>% filter(year %in% c(2018, 2019, 2001, 2006)),
+                   aes(x = median + c(50, 50, 50, 50),
+                       y = lambdaN + c(-0.03, 0.03, 0.03, 0.03),
+                       label = paste(year, year + 1, sep = "-")),
+             size = 2.5) +
+   # x = lambdaK + c(-0.075, 0.075, -0.075, 0.075),
+   #                y = lambdaN + c(0.04, 0.04, -0.04, -0.04)
    labs(
      # title = "Relationship between K-N and \U03BBN",
      # subtitle = "Errorbars show range of possible values using all estimates of K\nand N in 1st of each month",
-     x = "N - K",
+     x = "N<sub>t</sub> - K<sub>t</sub>",
      y = "\U03BB<sub>N</sub>") +
    coord_equal(ratio = 250/0.5,
                clip = "off",

@@ -47,7 +47,7 @@ plot_data_fig1a <- data.frame(t = 0:500, K1 = 100, K2 = 400, Kr = 0.02, t_inflec
                               N0 = 100, r = 0.025) |>
   mutate(Kt = Kt(t = t, K1 = K1, K2 = K2, Kr = Kr, t_inflection = t_inflection),
          Nt = NA,
-         panel = c("A) Improving environment"))
+         panel = c("a) Improving environment"))
 
 for (i in 2:nrow(plot_data_fig1a)) {
 
@@ -68,7 +68,7 @@ plot_data_fig1b <- data.frame(t = 0:500, K1 = 500, K2 = 0, Kr = 0, t_inflection 
                               r = 0.00725) |>
   mutate(Kt = Kt(t = t, K1 = K1, K2 = K2, Kr = Kr, t_inflection = t_inflection),
          Nt = NA,
-         panel = c("B) Stable environment"))
+         panel = c("b) Stable environment"))
 
 for (i in 2:nrow(plot_data_fig1b)) {
 
@@ -88,7 +88,7 @@ plot_data_fig1c <- data.frame(t = 0:500, K1 = 500, K2 = -400, Kr = 0.009, t_infl
                               N0 = 100, r = 0.008) |>
   mutate(Kt = Kt(t = t, K1 = K1, K2 = K2, Kr = Kr, t_inflection = t_inflection),
          Nt = NA,
-         panel = c("C) Deteriorating environment"))
+         panel = c("c) Deteriorating environment"))
 
 for (i in 2:nrow(plot_data_fig1c)) {
 
