@@ -364,7 +364,7 @@ summary(global_mod)
 CI of year term
 
 ```{r}
-spaMM::confint.HLfit(global_mod, parm = "year", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(global_mod, parm = "year")
 ```
 
 Fixef term
@@ -489,35 +489,35 @@ LRT(global_mod, null_mod)
 CI of year term
 
 ```{r}
-spaMM::confint.HLfit(global_mod, parm = "year:nameA", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(global_mod, parm = "year:nameA")
 ```
 
 ```{r}
-spaMM::confint.HLfit(global_mod, parm = "year:nameE", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(global_mod, parm = "year:nameE")
 ```
 
 ```{r}
-spaMM::confint.HLfit(global_mod, parm = "year:nameF", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(global_mod, parm = "year:nameF")
 ```
 
 ```{r}
-spaMM::confint.HLfit(global_mod, parm = "year:nameL", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(global_mod, parm = "year:nameL")
 ```
 
 ```{r}
-spaMM::confint.HLfit(global_mod, parm = "year:nameM", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(global_mod, parm = "year:nameM")
 ```
 
 ```{r}
-spaMM::confint.HLfit(global_mod, parm = "year:nameN", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(global_mod, parm = "year:nameN")
 ```
 
 ```{r}
-spaMM::confint.HLfit(global_mod, parm = "year:nameS", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(global_mod, parm = "year:nameS")
 ```
 
 ```{r}
-spaMM::confint.HLfit(global_mod, parm = "year:nameT", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(global_mod, parm = "year:nameT")
 ```
 
 ## Kt in growth period
@@ -538,7 +538,7 @@ summary(K_model_growthperiod)
 ```
 
 ```{r}
-confint(K_model_growthperiod, parm = "year", boot_args = list(nsim = 999, nb_cores = 10, seed = 123))
+confint(K_model_growthperiod, parm = "year")
 ```
 
 ## Ktc in growth period
@@ -562,38 +562,38 @@ summary(K_model_perclan_growthperiod)
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameA", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameA")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameE", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameE")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameF", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameF")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameL", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameL")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameM", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameM")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameN", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameN")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameS", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameS")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameT", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameT")
 ```
 
-## Kt in growth period
+## Kt after growth period
 
 ```{r}
 K_model_growthperiod <- fitme(globalK ~ year + AR1(1|n), data = poisson_data %>% filter(year > growth_period_until), family = "gaussian")
@@ -635,35 +635,35 @@ summary(K_model_perclan_growthperiod)
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameA", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameA")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameE", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameE")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameF", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameF")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameL", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameL")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameM", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameM")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameN", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameN")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameS", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameS")
 ```
 
 ```{r}
-spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameT", boot_args = list(nsim = 999, nb.cores = 10, seed = 123))
+spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameT")
 ```
 
 ## Sex ratio
