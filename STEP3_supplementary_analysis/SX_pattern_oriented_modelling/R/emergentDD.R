@@ -3,19 +3,19 @@ library(ggplot2)
 library(ggtext)
 library(here)
 
-dir <- "~/data/simulation_results/analysis/STEP1_estimate_K/2001"
+dir <- here::here("./STEP1_estimate_K/2001")
 
 files <- list.files(dir, pattern = ".txt", full.names = TRUE)
 
 outcome <- purrr::map_df(.x = files, .f = function(file){
-  
+
   readr::read_delim(file, show_col_types = FALSE, lazy = FALSE) %>%
-    dplyr::mutate(sim = stringr::str_extract(file, "(?<=_)[0-9]+(?=.txt)")) |> 
-    select(sim, date, Nt = pop_size) |> 
+    dplyr::mutate(sim = stringr::str_extract(file, "(?<=_)[0-9]+(?=.txt)")) |>
+    select(sim, date, Nt = pop_size) |>
     mutate(Nt1 = lead(Nt),
-           lambdaN = Nt1/Nt) |> 
+           lambdaN = Nt1/Nt) |>
     filter(!is.na(lambdaN))
-  
+
 })
 
 (output <- ggplot() +
@@ -32,4 +32,4 @@ outcome <- purrr::map_df(.x = files, .f = function(file){
         legend.position = "none",
         plot.margin = margin(b = 15, l = 15, t = 15)))
 
-ggsave(plot = output, filename = here("./analysis/plots/supp_emergent_dd_new.png"), dpi = 600, height = 5, width = 7)
+ggsave(plot = output, filename = here("./plots/supp_emergent_dd.png"), dpi = 600, height = 5, width = 7)

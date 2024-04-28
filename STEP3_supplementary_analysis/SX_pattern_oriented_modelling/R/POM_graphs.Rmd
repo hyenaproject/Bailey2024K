@@ -16,17 +16,19 @@ library(ggplot2)
 library(spaMM)
 
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
-model_data <- readRDS(here::here("./analysis/data/model_data.RDS"))
+model_data <- readRDS(here::here("./data/model_data.RDS"))
 
 ## GENERATED IN STEP1_estimate_K/estimateK.R
-modlist <- readRDS(here::here("./analysis/data/model_list.RDS"))
+modlist <- readRDS(here::here("./data/model_list.RDS"))
+
+db.path <- "../hyena_data/Fisidata_20_04_2024.sqlite"
 ```
 
 ```{r}
 ## Run simulation for 313 timesteps (i.e. from 1996 - 2021)
 POM_sim <- simulation_fitrun(number_steps = 320, models = modlist,
                              return = TRUE, name = "POM",
-                             save_dir = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data",
+                             save_dir = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data"),
                              predictors = list(start_clan = \(ID) ID$clan_name,
                                                post_dispersal_status = \(ID) if (ID$birth_date == ID$first_date) "philo" else "disp",
                                                ## If we want a more refined estimate of rank
@@ -75,24 +77,24 @@ for (file in all_tbls){
   }
   
   write.csv(focal_tbl,
-            file = paste0("~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data/", save_name, ".csv"), row.names = FALSE)
+            file = here::here(paste0("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data/", save_name, ".csv")), row.names = FALSE)
   
 }
 
 build_package_database.full(db.name = "POM_sim",
-                            input.folder = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data")
+                            input.folder = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data"))
 ```
 
 ```{r}
 # load_package_database.sim(POM_sim)
-load_package_database.full("~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data/POM_sim.sqlite")
+load_package_database.full(here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data/POM_sim.sqlite"))
 
 ```
 
 ```{r}
 ### LIFESPAN
 lifespan_data_sim <- create_id_starting.table(sex = c("female", "male"),
-                                              from = find_pop_date.observation.first(),
+                                              from = "1978-12-25",
                                               to = find_pop_date.observation.last(),
                                               lifestage = "cub", lifestage.overlap = "start") %>%
   mutate(lifespan = fetch_id_duration.lifespan(ID),
@@ -103,20 +105,41 @@ lifespan_data_sim <- create_id_starting.table(sex = c("female", "male"),
   filter(!is.na(lifespan))
 
 ### FEMALE LRS
+all_maxage <- hyenaR::create_id_starting.table() |>
+    dplyr::mutate(maxage = hyenaR::fetch_id_duration.lifespan(ID, unit = "month"))
+
 LRS_data_sim <- create_id_starting.table(sex = "female", lifestage = "adult",
-                                         ## We observed their full adult life
-                                         lifestage.overlap = "within",
-                                         from = find_pop_date.observation.first(),
-                                         to = find_pop_date.observation.last()) %>%
-  mutate(RS = fetch_id_number.offspring(ID = .data$ID, filiation = c("mother_genetic", "mother_social_genetic"), age.mature = 6, unit = "month"),
-         sex = fetch_id_sex(ID),
-         source = "sim",
-         rank = fetch_id_rank.native.std(ID, at = fetch_id_date.at.age(ID, age = 2, unit = "year")))
+                                    ## We observed their full adult life
+                                    lifestage.overlap = "within",
+                                    from = "1978-12-25",
+                                    to = find_pop_date.observation.last()) |>
+  dplyr::mutate(from = fetch_id_date.birth(ID),
+         to = fetch_id_date.death(ID)) |> 
+  dplyr::filter(!is.na(to)) |> 
+  dplyr::mutate(offspring = hyenaR::fetch_id_id.offspring(ID = .data$ID, from = .data$from, to = .data$to)) |>
+  tidyr::unnest(cols = c(.data$offspring)) |>
+  dplyr::left_join(all_maxage, by = c("offspring" = "ID")) |>
+  dplyr::group_by(.data$ID) |>
+  dplyr::summarise(RS = sum(!is.na(.data$maxage) & .data$maxage >= 6),
+                   sex = "female",
+                   source = "sim",
+                   .groups = "drop") |> 
+  dplyr::mutate(rank = fetch_id_rank.native.std(ID, at = fetch_id_date.at.age(ID, age = 2, unit = "year")))
+
+# LRS_data_sim <- create_id_starting.table(sex = "female", lifestage = "adult",
+#                                          ## We observed their full adult life
+#                                          lifestage.overlap = "within",
+#                                          from = "1978-12-25",
+#                                          to = find_pop_date.observation.last()) %>%
+#   mutate(RS = fetch_id_number.offspring(ID = .data$ID, filiation = c("mother_genetic", "mother_social_genetic"), age.mature = 6, unit = "month"),
+#          sex = fetch_id_sex(ID),
+#          source = "sim",
+#          rank = fetch_id_rank.native.std(ID, at = fetch_id_date.at.age(ID, age = 2, unit = "year")))
 
 ### FEMALE AGE AT FIRST REPRO
 firstrepro_data_sim <- create_id_offspring.table() %>% 
   ## Find non-left censored individuals
-  filter(fetch_id_date.birth(parentID) >= find_pop_date.observation.first()) %>% 
+  filter(fetch_id_date.birth(parentID) >= "1978-12-25") %>% 
   filter(filiation %in% c("mother_social_genetic", "mother_genetic")) %>% 
   mutate(cublifespan = fetch_id_duration.lifespan(offspringID, unit = "month"),
          cubage_lastdate = fetch_id_age(offspringID, at = find_pop_date.observation.last(), unit = "month")) %>% 
@@ -129,7 +152,7 @@ firstrepro_data_sim <- create_id_offspring.table() %>%
 ### FEMALE IBI
 IBI_data_sim <- create_id_offspring.table() %>% 
   ## Find non-left censored litters
-  filter(birthdate >= find_pop_date.observation.first()) %>% 
+  filter(birthdate >= "1978-12-25") %>% 
   filter(filiation %in% c("mother_social_genetic", "mother_genetic")) %>% 
   mutate(cublifespan = fetch_id_duration.lifespan(offspringID, unit = "month"),
          cubage_lastdate = fetch_id_age(offspringID, at = find_pop_date.observation.last(), unit = "month")) %>% 
@@ -163,15 +186,36 @@ lifespan_data_real <- create_id_starting.table(sex = c("female", "male"),
   filter(!is.na(lifespan) & lifespan > 0.5)
 
 ### FEMALE LRS
+all_maxage <- hyenaR::create_id_starting.table() |>
+    dplyr::mutate(maxage = hyenaR::fetch_id_duration.lifespan(ID, unit = "month"))
+
 LRS_data_real <- create_id_starting.table(sex = "female", lifestage = "adult",
-                                          ## We observed their full adult life
-                                          lifestage.overlap = "within",
-                                          from = find_pop_date.observation.first(),
-                                          to = find_pop_date.observation.last()) %>%
-  mutate(RS = fetch_id_number.offspring(ID = .data$ID, filiation = c("mother_genetic", "mother_social_genetic"), age.mature = 6, unit = "month"),
-         sex = fetch_id_sex(ID),
-         source = "real",
-         rank = fetch_id_rank.native.std(ID, at = fetch_id_date.at.age(ID, age = 2, unit = "year")))
+                                    ## We observed their full adult life
+                                    lifestage.overlap = "within",
+                                    from = "1978-12-25",
+                                    to = find_pop_date.observation.last()) |>
+  dplyr::mutate(from = fetch_id_date.birth(ID),
+         to = fetch_id_date.death(ID)) |> 
+  dplyr::filter(!is.na(to)) |> 
+  dplyr::mutate(offspring = hyenaR::fetch_id_id.offspring(ID = .data$ID, from = .data$from, to = .data$to)) |>
+  tidyr::unnest(cols = c(.data$offspring)) |>
+  dplyr::left_join(all_maxage, by = c("offspring" = "ID")) |>
+  dplyr::group_by(.data$ID) |>
+  dplyr::summarise(RS = sum(!is.na(.data$maxage) & .data$maxage >= 6),
+                   sex = "female",
+                   source = "real",
+                   .groups = "drop")  |> 
+  dplyr::mutate(rank = fetch_id_rank.native.std(ID, at = fetch_id_date.at.age(ID, age = 2, unit = "year")))
+
+# LRS_data_real <- create_id_starting.table(sex = "female", lifestage = "adult",
+#                                           ## We observed their full adult life
+#                                           lifestage.overlap = "within",
+#                                           from = find_pop_date.observation.first(),
+#                                           to = find_pop_date.observation.last()) %>%
+#   mutate(RS = fetch_id_number.offspring(ID = .data$ID, filiation = c("mother_genetic", "mother_social_genetic"), age.mature = 6, unit = "month"),
+#          sex = fetch_id_sex(ID),
+#          source = "real",
+#          rank = fetch_id_rank.native.std(ID, at = fetch_id_date.at.age(ID, age = 2, unit = "year")))
 
 ### FEMALE AGE AT FIRST REPRO
 firstrepro_data_real <- create_id_offspring.table() %>% 
@@ -238,7 +282,7 @@ ggplot() +
   theme_classic() +
   theme(axis.text = element_text(colour = "black"))
 
-ggsave(filename = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/lifespan.png",
+ggsave(filename = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/lifespan.png"),
        width = 9, heigh = 5)
 ```
 
@@ -270,7 +314,7 @@ ggplot() +
   theme_classic() +
   theme(axis.text = element_text(colour = "black"))
 
-ggsave(filename = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/LRS.png",
+ggsave(filename = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/LRS.png"),
        width = 9, heigh = 5)
 ```
 
@@ -304,7 +348,7 @@ ggplot() +
   theme_classic() +
   theme(axis.text = element_text(colour = "black"))
 
-ggsave(filename = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/age_at_first_repro.png",
+ggsave(filename = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/age_at_first_repro.png"),
        width = 9, heigh = 5)
 ```
 
@@ -338,7 +382,7 @@ ggplot() +
   theme_classic() +
   theme(axis.text = element_text(colour = "black"))
 
-ggsave(filename = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/IBI.png",
+ggsave(filename = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/IBI.png"),
        width = 9, heigh = 5)
 ```
 
@@ -387,46 +431,6 @@ ggplot() +
   theme(axis.text = element_text(colour = "black"),
         legend.position = "none")
 
-ggsave(filename = "~/data/simulation_results/analysis/STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/rank_effect.png",
+ggsave(filename = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/rank_effect.png"),
        width = 9, heigh = 5)
-```
-
-## Population size
-
-```{r}
-sim_pop_ad <- POM_sim$Rawdata_tbl %>% 
-  filter(age >= 24) %>% 
-  group_by(current_date) %>% 
-  summarise(n = n())
-
-filter(sim_pop_ad, n == max(n))
-```
-
-
-```{r}
-sim_pop_cub <- POM_sim$Rawdata_tbl %>% 
-  filter(age < 24) %>% 
-  group_by(current_date) %>% 
-  summarise(n = n())
-
-filter(sim_pop_cub, n == max(n))
-```
-
-```{r}
-### GENERATED IN STEP0_prepare_data/demographic_data.R
-real_pop <- readRDS(here::here("./analysis/data/Nplot_data_separate_1month.RDS"))
-real_pop <- real_pop %>% 
-  mutate(ad_total = ad_male + ad_fem)
-```
-
-```{r}
-ggplot() +
-  geom_line(data = real_pop, aes(x = date, y = ad_total), colour = "blue") +
-  geom_line(data = sim_pop_ad, aes(x = current_date, y = n), colour = "red")
-```
-
-```{r}
-ggplot() +
-  geom_line(data = real_pop, aes(x = date, y = young), colour = "blue") +
-  geom_line(data = sim_pop_cub, aes(x = current_date, y = n), colour = "red")
 ```

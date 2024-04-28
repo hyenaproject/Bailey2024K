@@ -7,7 +7,9 @@ output:
   pdf_document: default
 ---
 
-We will use mean square error to estimate K using different traditional methods.
+We want to see how our estimation of K with time-varying carrying capacity compares to traditional methods that assume a fixed K. We will focus on two particular equations, Ricker and Beverton-Holt. Each of these has an exponential and hyperbolic version, as described by Jhost et al. 2008 (doi: 10.1007/907s10144-007-0061-5).
+
+To predict Nt+1 we need to know Nt, Rmax (the maximum population growth rate) and K. We can optimise for Rmax and K by using mean square error comparing estimated N with observed N. We use the BOBYQA optimizer, but run estimates with different starting parameters and optimizers to check for consistency.
 
 # Prepare workspace
 
@@ -17,10 +19,12 @@ library(FSA)
 library(SHIM)
 library(hyenaR)
 library(dplyr)
+library(here)
 ```
 
 ```{r}
-pop_size <- read.csv(here("./analysis/data/supp_data1_alternativeK_data.csv"))
+pop_size <- read.csv(here("./data/supp_data1_alternativeK_data.csv"))
+plot_range <- range(pop_size$pop_size) # Range of population sizes to optimize over
 ```
 
 Truncated data where removing last timestep where population at t+1 is unknown.
@@ -37,7 +41,7 @@ pop_size_trunc <- pop_size %>%
 These functions are all used to estimate K when given N.
 
 ```{r}
-sheph_mod <- FSA::srFuns(type = "Shepherd")
+sheph_mod <- FSA::srFuns(type = "Shepherd") ## This behaves differently and is not used
 
 ricker_exp_mod <- function(N, Rmax, K){
   
@@ -116,8 +120,7 @@ pop_size_test <- data.frame(pop_size = floor(runif(n = 1000, max = 1000))) %>%
 ```{r}
 
 generic_optim <- function(input, data, type = c("Ricker_exp", "Ricker_hyp",
-                                                "BH_exp", "BH_hyp",
-                                                "Shepherd")){
+                                                "BH_exp", "BH_hyp")){
   
   y_obsv <- switch(type,
                    Ricker_exp = data$lngrowth,
@@ -132,6 +135,7 @@ generic_optim <- function(input, data, type = c("Ricker_exp", "Ricker_hyp",
     y_hat  <- aggregate_mod(N = data$pop_size, Rmax = input[1], K = input[2], type = type)
   }
   
+  ## Check difference between observed N and estimated N from model
   sq_diff <- (y_obsv - y_hat)^2
   
   sum(sq_diff)/nrow(data)
@@ -1339,16 +1343,31 @@ all_fitted_data <- do.call(what = bind_rows, args = list(plot_nloptr_bobyqa_best
                                                          plot_minqa_bobyqa_best,
                                                          plot_nlminb_best))
 
+
+## Is there much difference in MSE for different optimizers?
+## NO! We can just keep whichever we like (in thise case nlotpr BOBYQA)
+all_fitted_data |> 
+  group_by(type) |> 
+  summarise(min = min(MSE),
+            max = max(MSE))
+```
+```{r}
+## Median of all K estimates
 (medianK_allopt <- median(all_fitted_data$optK))
+```
+
+```{r}
+## Range of K estimates for BOBYQA optimizers
+range(plot_nloptr_bobyqa_best$optK)
 ```
 
 How do these values compare to our median of Kt?
 
 ```{r}
-if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
+if (!file.exists(here::here("./data/Kplot_data.RDS"))) {
   stop("K data not extracted")
 } else {
-  Kplot_data <- readRDS(here::here("./analysis/data/Kplot_data.RDS"))
+  Kplot_data <- readRDS(here::here("./data/Kplot_data.RDS"))
 }
 
 all_fitted_data$optK/median(Kplot_data$globalK)
@@ -1357,7 +1376,7 @@ all_fitted_data$optK/median(Kplot_data$globalK)
 ## Extract marginal values
 
 ```{r}
-folder <- here::here("./analysis/STEP1_estimate_K/marginal")
+folder <- here::here("./STEP1_estimate_K/marginal")
 all_files <- list.files(folder, pattern = ".txt", full.names = TRUE)
 
 pb_yr <- progress::progress_bar$new(total = length(all_files))
@@ -1385,6 +1404,11 @@ marginalK_df <- estK %>%
   dplyr::summarise(globalK = median(.data$K),
                    lower = min(.data$K),
                    upper = max(.data$K))
+
+range(estK$K)
+```
+```{r}
+median(estK$K)
 ```
 
 ```{r}
@@ -1450,41 +1474,48 @@ library(ggtext)
         axis.title.y = element_blank(),
         axis.title.x = element_markdown(size = 10)))
 
-ggsave(output, filename = here::here("analysis/plots/alternative_K_method_new.png"),
+ggsave(output, filename = here::here("./plots/alternative_K_method.png"),
        width = 8.25, height = 3.75, dpi = 600)
 ```
 
-## PLOT 2: Show estimated values for top models
+Redo plot but just using BOBYQA optimiser.
 
 ```{r}
-plot_data2 <- all_fitted_data %>% 
-  tidyr::unnest(cols = c(x, y))
-```
-
-```{r}
-#Ricker models
-plot_data_Ricker <- plot_data2 %>% 
-  filter(grepl(type, pattern = "^Ricker")) %>% 
-  #Filter data to just around the focal point ~500
-  filter(x > 450 & x < 550)
+plot_data <- plot_nloptr_bobyqa_best |> 
+  mutate(label = case_when(type == "Ricker_exp" ~ "Ricker (exponential)",
+                           type == "Ricker_hyp" ~ "Ricker (hyperbolic)",
+                           type == "BH_exp" ~ "Beverton-Holt (exponential)",
+                           type == "BH_hyp" ~ "Beverton-Holt (hyperbolic)")) |> 
+  tidyr::separate(type, sep = "_", into = c("equation", "type"))
+  
 
 ggplot() +
-  geom_hline(yintercept = 0, lty = 2, linewidth = 0.25) +
-  geom_line(data = plot_data_Ricker, aes(x = x, y = y, group = opt)) +
-  facet_wrap(facets = ~type) +
-  coord_cartesian(xlim = c(450, 550)) +
-  theme_classic()
-```
-
-```{r}
-#Beverton-Holt models
-plot_data_BH <- plot_data2 %>% 
-  filter(grepl(type, pattern = "^BH"))
-
-ggplot() +
-  geom_abline(slope = 1, intercept = 0, lty = 2, linewidth = 0.25) +
-  geom_line(data = plot_data_BH, aes(x = x, y = y, group = opt)) +
-  facet_wrap(facets = ~type) +
+  ## Use all estimats of marginal K
+  geom_boxplot(data = estK,
+               aes(x = 1, y = K)) +
+  geom_point(data = plot_data,
+             aes(x = 1.05, y = optK, fill = equation),
+             shape = 21, size = 3) +
+  geom_text_repel(data = plot_data,
+            aes(x = 1.05, y = optK,
+                label = label),
+            hjust = 0, nudge_x = 0.05,
+            size = 5) +
+  scale_fill_manual(values = c("grey20", "grey80")) +
+  scale_y_continuous(limits = c(518, 562),
+                     breaks = seq(520, 560, 10)) +
+  scale_x_continuous(limits = c(0.5, 1.5)) +
+  labs(y = "Fixed carrying capacity") +
   coord_cartesian(expand = FALSE) +
-  theme_classic()
+  theme_classic() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_markdown(colour = "black",
+                                       size = 14),
+        axis.ticks.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_markdown(size = 18, margin = margin(r = 10)),
+        legend.position = "none")
+
+ggsave(filename = here::here("./plots/alternative_K_method_singleopt.png"),
+       height = 8.25, width = 8.25, dpi = 600)
 ```

@@ -18,20 +18,20 @@ library(ggplot2)
 library(spaMM)
 
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
-model_data <- readRDS(here::here("./analysis/data/model_data.RDS"))
+model_data <- readRDS(here::here("./data/model_data.RDS"))
 
 ## GENERATED IN STEP1_estimate_K/estimateK.R
-modlist <- readRDS(here::here("./analysis/data/model_list.RDS"))
+modlist <- readRDS(here::here("./data/model_list.RDS"))
 
 ## GENERATED IN STEP0_prepare_data/starting_population.R
-start_pop_example <- read.csv(here::here("./analysis/data/starting_data.csv"))
+start_pop_example <- readRDS(here::here("./data/starting_data.RDS"))
 
 # Take subset of startpop in 1996 to start at smaller N
-start_pop <- start_pop_example |> 
-  mutate(juv = age < 24) |> 
-  group_by(current_clan, sex, juv) |> 
+start_pop <- start_pop_example |>
+  mutate(juv = age < 24) |>
+  group_by(current_clan, sex, juv) |>
   slice(sample(1:n(), size = n()/4))
-  
+
 #Run 10 iterations ignoring year (i.e. marginal effect)
 system.time({simulation_iterate(start_pops = start_pop,
                                 return = FALSE,
@@ -49,7 +49,7 @@ system.time({simulation_iterate(start_pops = start_pop,
                                 ),
                                 number_steps = 600,
                                 step_size = 1, models = modlist,
-                                save_dir = "./analysis/STEP3_supplementary_analysis/SX_misc_analysis/plot_simulated_dd",
+                                save_dir = "./STEP3_supplementary_analysis/SX_misc_analysis/plot_simulated_dd",
                                 save_size = 60,
                                 iterator_seed = 123,
                                 parallel = TRUE, CPUcores = 10, .parallel.min = 1)})
@@ -58,34 +58,34 @@ system.time({simulation_iterate(start_pops = start_pop,
 ### EXTRACT MARGINAL N WHERE ENV IS FIXED AND WE CAN SEE DD RELATIONSHIP EXPLICITLY
 
 ## Marginal K (i.e. not time-varying)
-folder <- here::here("./analysis/STEP3_supplementary_analysis/SX_misc_analysis/plot_simulated_dd")
+folder <- here::here("./STEP3_supplementary_analysis/SX_misc_analysis/plot_simulated_dd")
 all_files <- list.files(folder, pattern = ".txt", full.names = TRUE)
 
 pb_yr <- progress::progress_bar$new(total = length(all_files))
 
 allsims <- purrr::map_df(.x = all_files,
                          .f = function(filepath){
-                           
+
                            pb_yr$tick()
-                           
+
                            basename <- base::basename(filepath)
-                           
+
                            readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) %>%
                              dplyr::mutate(sim = stringr::str_extract(basename, "(?<=_)[0-9]+(?=.txt)"))
-                           
+
                          })
 
-estN <- allsims %>% 
-  dplyr::group_by(.data$sim) %>% 
-  dplyr::slice(1:ceiling(dplyr::n()/1)) %>% 
+estN <- allsims %>%
+  dplyr::group_by(.data$sim) %>%
+  dplyr::slice(1:ceiling(dplyr::n()/1)) %>%
   ## Thin out to be every 3mo
-  dplyr::slice(seq(1, dplyr::n(), by = 1)) |> 
-  dplyr::select(date, pop_size, sim) |> 
-  dplyr::group_by(sim) |> 
+  dplyr::slice(seq(1, dplyr::n(), by = 1)) |>
+  dplyr::select(date, pop_size, sim) |>
+  dplyr::group_by(sim) |>
   dplyr::mutate(Nt = pop_size,
                 Nt1 = lead(pop_size),
                 deltaN = Nt1-Nt,
-                lambdaN = Nt1/Nt) |> 
+                lambdaN = Nt1/Nt) |>
   dplyr::filter(!is.na(deltaN))
 
 library(ggplot2)
@@ -104,7 +104,7 @@ ggplot(data = estN) +
                      breaks = seq(0, 600, 50)) +
   theme_classic()
 
-ggsave(filename = "./analysis/plots/supp_Nt_lambdaN.png")
+ggsave(filename = "./plots/supp_Nt_lambdaN.png")
 
 ggplot(data = estN) +
   geom_point(aes(x = Nt, y = deltaN), alpha = 0.25) +
@@ -121,4 +121,4 @@ ggplot(data = estN) +
                      breaks = seq(0, 600, 50)) +
   theme_classic()
 
-ggsave(filename = "./analysis/plots/supp_Nt_deltaN.png")
+ggsave(filename = "./plots/supp_Nt_deltaN.png")

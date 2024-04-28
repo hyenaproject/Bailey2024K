@@ -9,7 +9,8 @@ Below is a description of the different folders.
 Generate all data needed for analysis. This code requires access to the Ngorongoro Hyena Project database, which is not publicly available. The final output of all these data extraction tasks is available on Zenodo (https://doi.org/10.5281/zenodo.10955615). These data should be downloaded into folder 'data' for the following scripts.
 
 This folder includes:
-- starting_population.R - Generate a snapshot of spotted hyena population at time 0. Output saved as data/starting_data.csv
+- starting_population.R - Generate a snapshot of spotted hyena population at time 0. Output saved as data/starting_data.RDS.
+.RDS file needed because we have nested (list) columns for selections.
 - model_fit.Rmd - Extract data used to fit all models. Output saved as data/model_data.RDS. Test model fitting with different link functions and exponents.
 - mechanistic_data.Rmd - Extract environmental data to run mechanistic models, including data on lions, prey abundance, and disease. Output saved as 'data/mechanistic_model_data.csv'.
 - lambdaN_data.Rmd - Extract data on lambda population size, used to estimate K using traditional Ricker and Beverton Holt models. Output saved as 'data/supp_data1_alternativeK_data.csv'

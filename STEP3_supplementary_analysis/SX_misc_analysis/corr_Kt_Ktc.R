@@ -1,8 +1,8 @@
 library(dplyr)
 
-Kplot_data <- readRDS(here::here("./analysis/data/Kplot_data.RDS"))
+Kplot_data <- readRDS(here::here("./data/Kplot_data.RDS"))
 
-Kplot_data_byclan <- readRDS(here::here("./analysis/data/Kplot_clan_data.RDS"))
+Kplot_data_byclan <- readRDS(here::here("./data/Kplot_clan_data.RDS"))
 
 plot_data <- Kplot_data_byclan %>% 
   select(sim, A:T, year) %>% 

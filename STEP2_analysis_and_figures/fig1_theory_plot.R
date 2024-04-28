@@ -23,18 +23,18 @@ Kt <- function(t, K1 = 200, K2 = 400, Kr = 0.1, t_inflection = 50){
 
 Nt <- function(t, N0, r, K1, K2 = 0, Kr = 0, t_inflection = 0,
                verbose = FALSE){
-  
+
   Kt <- Kt(t = t, K1 = K1,
            K2 = K2, Kr = Kr,
            t_inflection = t_inflection)
   Nt <- Kt/(1 + ((Kt - N0)/N0)*exp(-r*t))
-  
+
   if (verbose) {
-    print(paste("t: ", t, "K: ", Kt, "N: ", Nt)) 
+    print(paste("t: ", t, "K: ", Kt, "N: ", Nt))
   }
-  
+
   return(Nt)
-  
+
 }
 
 #########
@@ -47,14 +47,14 @@ plot_data_fig1a <- data.frame(t = 0:500, K1 = 100, K2 = 400, Kr = 0.02, t_inflec
                               N0 = 100, r = 0.025) |>
   mutate(Kt = Kt(t = t, K1 = K1, K2 = K2, Kr = Kr, t_inflection = t_inflection),
          Nt = NA,
-         panel = c("A) Improving environment"))
+         panel = c("a) Improving environment"))
 
 for (i in 2:nrow(plot_data_fig1a)) {
-  
+
   N0 <- if (i == 2) plot_data_fig1a$N0[1] else plot_data_fig1a$Nt[i - 1]
-  
+
   plot_data_fig1a$Nt[i] <- Nt_old(t = 1, N0 = N0, r = plot_data_fig1a$r[1], K = plot_data_fig1a$Kt[i])
-  
+
 }
 
 ggplot(data = plot_data_fig1a) +
@@ -68,14 +68,14 @@ plot_data_fig1b <- data.frame(t = 0:500, K1 = 500, K2 = 0, Kr = 0, t_inflection 
                               r = 0.00725) |>
   mutate(Kt = Kt(t = t, K1 = K1, K2 = K2, Kr = Kr, t_inflection = t_inflection),
          Nt = NA,
-         panel = c("B) Stable environment"))
+         panel = c("b) Stable environment"))
 
 for (i in 2:nrow(plot_data_fig1b)) {
-  
+
   N0 <- if (i == 2) plot_data_fig1b$N0[1] else plot_data_fig1b$Nt[i - 1]
-  
+
   plot_data_fig1b$Nt[i] <- Nt_old(t = 1, N0 = N0, r = plot_data_fig1b$r[1], K = plot_data_fig1b$Kt[i])
-  
+
 }
 
 ggplot(data = plot_data_fig1b) +
@@ -88,14 +88,14 @@ plot_data_fig1c <- data.frame(t = 0:500, K1 = 500, K2 = -400, Kr = 0.009, t_infl
                               N0 = 100, r = 0.008) |>
   mutate(Kt = Kt(t = t, K1 = K1, K2 = K2, Kr = Kr, t_inflection = t_inflection),
          Nt = NA,
-         panel = c("C) Deteriorating environment"))
+         panel = c("c) Deteriorating environment"))
 
 for (i in 2:nrow(plot_data_fig1c)) {
-  
+
   N0 <- if (i == 2) plot_data_fig1c$N0[1] else plot_data_fig1c$Nt[i - 1]
-  
+
   plot_data_fig1c$Nt[i] <- Nt_old(t = 1, N0 = N0, r = plot_data_fig1c$r[1], K = plot_data_fig1c$Kt[i])
-  
+
 }
 
 ggplot(data = plot_data_fig1c) +
@@ -110,9 +110,9 @@ library(ggtext)
 
 panel1 <- ggplot() +
   geom_line(data = plot_data_fig1a,
-            aes(x = t, y = Kt), lty = 2, linewidth = 1) +
+            aes(x = t, y = Kt), lty = 2, linewidth = 1.2) +
   geom_line(data = plot_data_fig1a,
-            aes(x = t, y = Nt), lty = 1, linewidth = 1) +
+            aes(x = t, y = Nt), lty = 1, linewidth = 1.2) +
   geom_ribbon(aes(x = c(250, Inf),
                   ymin = c(-Inf, -Inf),
                   ymax = c(Inf, Inf)), alpha = 0.25) +
@@ -122,16 +122,16 @@ panel1 <- ggplot() +
   geom_richtext(aes(x = 200, y = 390,
                     label = "K<sub>t</sub>"),
                 fill = NA, label.colour = NA,
-                size = 12) +
+                size = 17) +
   geom_richtext(aes(x = 200, y = 150,
                     label = "N<sub>t</sub>"),
                 fill = NA, label.colour = NA,
-                size = 12) +
+                size = 17) +
   geom_richtext(aes(x = c(125, 375),
-                    y = c(540, 540),
-                    label = c("Monitoring period", "Future")),
+                    y = c(550, 550),
+                    label = c("Monitoring<br>period", "Future")),
                 fill = NA, label.colour = NA,
-                size = 8, hjust = 0.5) +
+                size = 12, hjust = 0.5, vjust = 1) +
   coord_cartesian(ylim = c(NA, 550)) +
   labs(y = "Number of individuals") +
   facet_wrap(facets = ~panel) +
@@ -139,18 +139,18 @@ panel1 <- ggplot() +
   theme(axis.text = element_blank(),
         axis.ticks = element_blank(),
         axis.title.x = element_blank(),
-        axis.title.y = element_text(size = 25),
+        axis.title.y = element_text(size = 35, margin = margin(r = 10, l = 10)),
         axis.line = element_blank(),
         strip.background = element_rect(fill = "white"),
         strip.text = element_text(size = 35, colour = "black",
                                   margin = margin(t = 10, b = 10)),
-        panel.background = element_rect(colour = "black"))
+        panel.background = element_rect(colour = "black", linewidth = 1.5))
 
 panel2 <- ggplot() +
   geom_line(data = plot_data_fig1b,
-            aes(x = t, y = Kt), lty = 2, linewidth = 1) +
+            aes(x = t, y = Kt), lty = 2, linewidth = 1.2) +
   geom_line(data = plot_data_fig1b,
-            aes(x = t, y = Nt), lty = 1, linewidth = 1) +
+            aes(x = t, y = Nt), lty = 1, linewidth = 1.2) +
   geom_ribbon(aes(x = c(250, Inf),
                   ymin = c(-Inf, -Inf),
                   ymax = c(Inf, Inf)), alpha = 0.25) +
@@ -163,18 +163,18 @@ panel2 <- ggplot() +
   theme(axis.text = element_blank(),
         axis.ticks = element_blank(),
         axis.title.y = element_blank(),
-        axis.title.x = element_text(size = 25),
+        axis.title.x = element_text(size = 35, margin = margin(t = 10, b = 10)),
         axis.line = element_blank(),
         strip.background = element_rect(fill = "white"),
         strip.text = element_text(size = 35, colour = "black",
                                   margin = margin(t = 10, b = 10)),
-        panel.background = element_rect(colour = "black"))
+        panel.background = element_rect(colour = "black", linewidth = 1.5))
 
 panel3 <- ggplot() +
   geom_line(data = plot_data_fig1c,
-            aes(x = t, y = Kt), lty = 2, linewidth = 1) +
+            aes(x = t, y = Kt), lty = 2, linewidth = 1.2) +
   geom_line(data = plot_data_fig1c,
-            aes(x = t, y = Nt), lty = 1, linewidth = 1) +
+            aes(x = t, y = Nt), lty = 1, linewidth = 1.2) +
   geom_ribbon(aes(x = c(250, Inf),
                   ymin = c(-Inf, -Inf),
                   ymax = c(Inf, Inf)), alpha = 0.25) +
@@ -190,15 +190,9 @@ panel3 <- ggplot() +
         strip.background = element_rect(fill = "white"),
         strip.text = element_text(size = 35, colour = "black",
                                   margin = margin(t = 10, b = 10)),
-        panel.background = element_rect(colour = "black"))
+        panel.background = element_rect(colour = "black", linewidth = 1.5))
 
 panel1 + panel2 + panel3 + plot_layout(nrow = 1)
 
-ggsave(filename = here::here("./analysis/plots/K_theory_plot_new.png"), dpi = 600,
+ggsave(filename = here::here("./plots/K_theory_plot.png"), dpi = 600,
        height = 10, width = 30)
-
-
-# png(filename = here::here("./analysis/plots/K_theory_plot_new.png"), res = 600,
-#     height = 5, width = 15)
-# final_plot
-# dev.off()

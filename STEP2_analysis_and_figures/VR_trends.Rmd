@@ -18,11 +18,15 @@ library(doSNOW)
 Fit models
 
 ```{r fit_models}
+
+start_year <- 1997
+end_year <- 2022
+
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
-model_data <- readRDS(here::here("./analysis/data/model_data.RDS"))
+model_data <- readRDS(here::here("./data/model_data.RDS"))
 
 ## GENERATED IN STEP1_estimate_K/estimateK.R
-modlist <- readRDS(here::here("./analysis/data/model_list.RDS"))
+modlist <- readRDS(here::here("./data/model_list.RDS"))
 ```
 
 ## LRT of year term in each model.
@@ -30,7 +34,8 @@ modlist <- readRDS(here::here("./analysis/data/model_list.RDS"))
 ### F survival
 
 ```{r}
-F_surv_mixmod_year <- update(modlist$allF, .~. + year)
+F_surv_mixmod_year <- update(modlist$allF, .~. + year, data = model_data$F_surv_data |> 
+                               filter(year >= start_year & year <= end_year))
 summary(F_surv_mixmod_year)
 ```
 
@@ -48,7 +53,8 @@ spaMM::confint.HLfit(F_surv_mixmod_year, parm = "year")
 ### M pre dispersal survival
 
 ```{r}
-preMsurv_mixmod_year <- update(modlist$predispM, .~. + year)
+preMsurv_mixmod_year <- update(modlist$predispM, .~. + year, data = model_data$PreM_surv_data |> 
+                               filter(year >= start_year & year <= end_year))
 summary(preMsurv_mixmod_year)
 ```
 
@@ -64,7 +70,8 @@ spaMM::confint.HLfit(preMsurv_mixmod_year, parm = "year")
 ### M post dispersal survival
 
 ```{r}
-postMsurv_mixmod_year <- update(modlist$postdispM, .~. + year)
+postMsurv_mixmod_year <- update(modlist$postdispM, .~. + year, data = model_data$PostM_surv_data |> 
+                               filter(year >= start_year & year <= end_year & !is.na(post_dispersal_status)))
 summary(postMsurv_mixmod_year)
 ```
 
@@ -81,7 +88,8 @@ spaMM::confint.HLfit(postMsurv_mixmod_year, parm = "year")
 ### Twinning
 
 ```{r}
-twin_mixmod_year <- update(modlist$twin, .~. + year)
+twin_mixmod_year <- update(modlist$twin, .~. + year, data = model_data$F_twin_data |> 
+                               filter(year >= start_year & year <= end_year))
 summary(twin_mixmod_year)
 ```
 
@@ -98,7 +106,8 @@ spaMM::confint.HLfit(twin_mixmod_year, parm = "year")
 ### Non-primiparous repro
 
 ```{r}
-nonprimirepro_mixmod_year <- update(modlist$nonprimirepro, .~. + year)
+nonprimirepro_mixmod_year <- update(modlist$nonprimirepro, .~. + year, data = model_data$F_repro_nonprimi |> 
+                               filter(year >= start_year & year <= end_year))
 summary(nonprimirepro_mixmod_year)
 ```
 
@@ -115,7 +124,8 @@ spaMM::confint.HLfit(nonprimirepro_mixmod_year, parm = "year")
 ### Primiparous repro
 
 ```{r}
-primirepro_mixmod_year <- update(modlist$primirepro, .~. + year)
+primirepro_mixmod_year <- update(modlist$primirepro, .~. + year, data = model_data$F_repro_primi |> 
+                               filter(year >= start_year & year <= end_year))
 summary(primirepro_mixmod_year)
 ```
 
@@ -128,3 +138,251 @@ spaMM::LRT(primirepro_mixmod_year, modlist$primirepro)
 set.seed(123)
 spaMM::confint.HLfit(primirepro_mixmod_year, parm = "year")
 ```
+
+## PLOT
+
+Combine all partial dependence effects data and plot as facet wrap
+
+```{r}
+pdep_data <- list()
+
+fsurv_pdep <- pdep_effects(F_surv_mixmod_year, focal_var = "year", length.out = 200) %>%
+  #Some weird behaviour in first and last time step....
+  slice(-1) %>%
+  slice(-n()) %>%
+  mutate(VR = "Female survival")
+
+pdep_data <- append(pdep_data, list(fsurv_pdep))
+
+preM_pdep <- pdep_effects(preMsurv_mixmod_year, focal_var = "year", length.out = 200) %>%
+  #Some weird behaviour in first and last time step....
+  slice(-1) %>%
+  slice(-n()) %>%
+  mutate(VR = "Male survival\n (juvenile)")
+
+pdep_data <- append(pdep_data, list(preM_pdep))
+
+postM_pdep <- pdep_effects(postMsurv_mixmod_year, focal_var = "year", length.out = 200) %>%
+  #Some weird behaviour in first and last time step....
+  slice(-1) %>%
+  slice(-n()) %>%
+  mutate(VR = "Male survival\n (adult)")
+
+pdep_data <- append(pdep_data, list(postM_pdep))
+
+primirepro_pdep <- pdep_effects(primirepro_mixmod_year, focal_var = "year", length.out = 200) %>%
+  #Some weird behaviour in first and last time step....
+  slice(-1) %>%
+  slice(-n()) %>%
+  mutate(VR = "Reproduction\n(primiparous)")
+
+pdep_data <- append(pdep_data, list(primirepro_pdep))
+
+nonprimirepro_pdep <- pdep_effects(nonprimirepro_mixmod_year, focal_var = "year", length.out = 200) %>%
+  #Some weird behaviour in first and last time step....
+  slice(-1) %>%
+  slice(-n()) %>%
+  mutate(VR = "Reproduction\n(non-primiparous)")
+
+pdep_data <- append(pdep_data, list(nonprimirepro_pdep))
+
+twin_pdep <- pdep_effects(twin_mixmod_year, focal_var = "year", length.out = 200) %>%
+  #Some weird behaviour in first and last time step....
+  slice(-1) %>%
+  slice(-n()) %>%
+  mutate(VR = "Twinning\n")
+
+pdep_data <- append(pdep_data, list(twin_pdep))
+```
+
+```{r}
+plot_data <- bind_rows(pdep_data) |> 
+  mutate(VR = factor(VR,
+                     levels = c("Female survival", "Male survival\n (juvenile)", "Male survival\n (adult)",
+                                "Reproduction\n(primiparous)", "Reproduction\n(non-primiparous)", "Twinning\n")),
+         year = focal_var,
+         lower = low,
+         upper = up,
+         mean = pointp)
+
+```
+
+```{r}
+
+bigtick_scale <- 0.0375
+smalltick_scale <- 0.02
+
+surv_ymax <- 1
+surv_ymin <- 0.9
+
+repro_ymax <- 0.14
+repro_ymin <- 0
+
+twin_ymax <- 0.8
+twin_ymin <- 0.1
+
+surv_panel <- ggplot(data = filter(plot_data, grepl("survival", x = VR))) +
+  geom_ribbon(aes(x = year, ymin = lower, ymax = upper),
+              fill = "grey85") +
+  geom_line(aes(x = year, y = mean)) +
+  # geom_hline(aes(yintercept = globalmean), lty = 2) +
+  coord_cartesian(clip = "off",
+                  expand = FALSE,
+                  ylim = c(surv_ymin, surv_ymax),
+                  xlim = c(1995, 2022)) +
+  annotate(geom = "segment",
+           y = surv_ymin, yend = surv_ymin-(surv_ymax-surv_ymin)*bigtick_scale,
+           x = seq(1995, 2020, by = 5),
+           xend = seq(1995, 2020, by = 5),
+           lineend = "round", linejoin = "round") +
+  annotate(geom = "segment",
+           y = surv_ymin, yend = surv_ymin-(surv_ymax-surv_ymin)*smalltick_scale,
+           x = seq(1995, 2022, by = 1),
+           xend = seq(1995, 2022, by = 1),
+           lineend = "round", linejoin = "round") +
+  facet_wrap(facets = ~VR, scales = "free_y") +
+  labs(y = "Proportion") +
+  scale_y_continuous(breaks = seq(surv_ymin, surv_ymax, 0.02)) +
+  scale_colour_discrete(guide = NULL) +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"),
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text = element_text(colour = "black"),
+        strip.background = element_rect(linewidth = 0.5),
+        plot.margin = margin(b = 5, t = 5))
+
+repro_panel <- ggplot(data = filter(plot_data, grepl("Repro", x = VR))) +
+  geom_ribbon(aes(x = year, ymin = lower, ymax = upper),
+              fill = "grey85") +
+  geom_line(aes(x = year, y = mean)) +
+  # geom_hline(aes(yintercept = globalmean), lty = 2) +
+  coord_cartesian(clip = "off",
+                  expand = FALSE,
+                  ylim = c(repro_ymin, repro_ymax),
+                  xlim = c(1995, 2022)) +
+  annotate(geom = "segment",
+           y = repro_ymin, yend = repro_ymin-(repro_ymax-repro_ymin)*bigtick_scale,
+           x = seq(1995, 2020, by = 5),
+           xend = seq(1995, 2020, by = 5),
+           lineend = "round", linejoin = "round") +
+  annotate(geom = "segment",
+           y = repro_ymin, yend = repro_ymin-(repro_ymax-repro_ymin)*smalltick_scale,
+           x = seq(1995, 2022, by = 1),
+           xend = seq(1995, 2022, by = 1),
+           lineend = "round", linejoin = "round") +
+  labs(y = "Proportion") +
+  scale_y_continuous(breaks = seq(0, repro_ymax, 0.02)) +
+  facet_wrap(facets = ~VR, scales = "free_y") +
+  scale_colour_discrete(guide = NULL) +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"),
+        axis.text.x = element_text(margin = margin(t = 4)),
+        axis.title.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text = element_text(colour = "black"),
+        strip.background = element_rect(linewidth = 0.5))
+
+twin_panel <- ggplot(data = filter(plot_data, grepl("Twin", x = VR))) +
+  geom_ribbon(aes(x = year, ymin = lower, ymax = upper),
+              fill = "grey85") +
+  geom_line(aes(x = year, y = mean)) +
+  # geom_hline(aes(yintercept = globalmean), lty = 2) +
+  coord_cartesian(clip = "off",
+                  expand = FALSE,
+                  ylim = c(twin_ymin, twin_ymax),
+                  xlim = c(1995, 2022)) +
+  annotate(geom = "segment",
+           y = twin_ymin, yend = twin_ymin-(twin_ymax-twin_ymin)*bigtick_scale,
+           x = seq(1995, 2020, by = 5),
+           xend = seq(1995, 2020, by = 5),
+           lineend = "round", linejoin = "round") +
+  annotate(geom = "segment",
+           y = twin_ymin, yend = twin_ymin-(twin_ymax-twin_ymin)*smalltick_scale,
+           x = seq(1995, 2022, by = 1),
+           xend = seq(1995, 2022, by = 1),
+           lineend = "round", linejoin = "round") +
+  scale_y_continuous(breaks = seq(0.1, 0.8, 0.1),
+                     labels = format(seq(0.1, 0.8, 0.1), nsmall = 2)) +
+  facet_wrap(facets = ~VR, scales = "free_y") +
+  scale_colour_discrete(guide = NULL) +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black"),
+        axis.text.x = element_text(margin = margin(t = 4)),
+        axis.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text = element_text(colour = "black"),
+        strip.background = element_rect(linewidth = 0.5),
+        plot.margin = margin(b = 5, t = 5))
+
+library(patchwork)
+
+surv_panel/((repro_panel|twin_panel) + plot_layout(widths = c(2.2, 1)))
+
+ggsave(filename = "/Users/liam/Desktop/Crater_data/pdep_VR.png", dpi = 600,
+       width = 8, height = 5)
+```
+
+```{r}
+all_plots <- purrr::map(.x = pdep_data,
+                        .f = ~{
+
+                          min <- min(.x$low)
+                          max <- max(.x$up)
+
+                          ylim <- case_when(1 - max < 0.1 ~ c(min*0.925, 1),
+                                            min < 0.1 ~ c(0, max*1.05),
+                                            TRUE ~ c(min*0.925, max*1.05))
+
+                          y_range <- abs(diff(ylim))
+
+                          ggplot(data = .x) +
+                            geom_ribbon(aes(x = focal_var, ymin = low, ymax = up),
+                                        fill = "grey75", alpha = 0.75) +
+                            geom_line(aes(x = focal_var, y = pointp), linewidth = 0.5) +
+                            scale_x_continuous(breaks = seq(1995, 2020, 5)) +
+                            coord_cartesian(expand = FALSE,
+                                            xlim = c(1995, 2021),
+                                            ylim = ylim,
+                                            clip = "off") +
+                            annotate(geom = "segment",
+                                     x = seq(1995, 2020, 5), xend = seq(1995, 2020, 5),
+                                     y = ylim[1], yend = ylim[1] - y_range*0.05,
+                                     lineend = "round", linejoin = "round") +
+                            # Need something like this to add x-text to all
+                            # annotate(geom = "text",
+                            #          x = seq(1995, 2020, 5),
+                            #          y = ylim[1],
+                            #          label = seq(1995, 2020, 5)) +
+                            annotate(geom = "segment",
+                                     x = seq(1995, 2021, 1), xend = seq(1995, 2021, 1),
+                                     y = ylim[1], yend = ylim[1] - y_range*0.0225,
+                                     lineend = "round", linejoin = "round") +
+                            facet_wrap(facets = ~VR, scales = "free_y") +
+                            theme_classic() +
+                            theme(axis.title = element_blank(),
+                                  axis.ticks.x = element_blank(),
+                                  axis.text.x = element_text(margin = margin(t = 5),
+                                                             colour = "black",
+                                                             size = 6.5),
+                                  axis.text.y = element_text(colour = "black",
+                                                             size = 6.5),
+                                  axis.ticks.y = element_line(lineend = "round"),
+                                  strip.background = element_rect(linewidth = 0.5),
+                                  plot.margin = margin(t = 12, b = 5, r = 5, l = 10)) +
+                            if (stringr::str_detect(string = .x$VR[1], pattern = "survival")) {
+                              theme(axis.text.x = element_blank())
+                            } else {
+                              theme()
+                            }
+
+                        })
+
+library(patchwork)
+patchwork::wrap_plots(all_plots, nrow = 2, ncol = 3)
+
+ggsave("/Users/liam/Desktop/Crater_data/pdep_VR.png", dpi = 600,
+       height = 4.5, width = 8)
+```
+

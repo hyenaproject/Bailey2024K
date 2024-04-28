@@ -24,21 +24,21 @@ library(ggtext)
 
 ```{r}
 start_year  <- 1997
-end_year    <- 2021
+end_year    <- 2022
 ```
 
 Load environmental data
 
 ```{r}
 ## GENERATED IN STEP0_prepare_data/mechanistic_data.Rmd
-mechanistic_data <- read.csv(here::here("./analysis/data/mechanistic_model_data.csv"))
+mechanistic_data <- read.csv(here::here("./data/mechanistic_model_data.csv"))
 ```
 
 Extract K data
 
 ```{r k_data_clan}
-if (file.exists(here::here("./analysis/data/Kplot_clan_data.RDS"))) {
-  Kplot_data <- readRDS(here::here("./analysis/data/Kplot_clan_data.RDS"))
+if (file.exists(here::here("./data/Kplot_clan_data.RDS"))) {
+  Kplot_data <- readRDS(here::here("./data/Kplot_clan_data.RDS"))
 } else {
   
   ## EXTRACT ESTIMATED K
@@ -51,7 +51,7 @@ if (file.exists(here::here("./analysis/data/Kplot_clan_data.RDS"))) {
                                 
                                 pb_yr$tick()
                                 
-                                txt_files <- list.files(here(paste0("./analysis/STEP1_estimate_K/", year)),
+                                txt_files <- list.files(here(paste0("./STEP1_estimate_K/", year)),
                                                         pattern = ".txt", full.names = TRUE)
                                 
                                 allsims <- purrr::map_df(.x = txt_files,
@@ -85,7 +85,7 @@ if (file.exists(here::here("./analysis/data/Kplot_clan_data.RDS"))) {
                                 
                               })
   
-  saveRDS(Kplot_data, file = here("./analysis/data/Kplot_clan_data.RDS"))
+  saveRDS(Kplot_data, file = here("./data/Kplot_clan_data.RDS"))
 }
 
 ```
@@ -235,8 +235,11 @@ Compare to null (significant!)
 null_mod <- fitme(globalK ~ 1 + AR1(1|year),
                   data = mod_data_alldisease_consv,
                   family = gaussian(link = "identity"))
-global_LRT_mod3 <- LRT(mod3, null_mod, boot.repl = 999, nb_cores = 10, seed = 124)
-data.frame(basic = global_LRT_mod3$basicLRT$p_value, bartlett = global_LRT_mod3$BartBootLRT$p_value, bootstrap = global_LRT_mod3$rawBootLRT$p_value)
+## USE ASYMPTOTIC LRT P-VAL RATHER THAN BOOTSTRAP.
+## THIS ALLOWS US TO BE CONSISTENT IN ALL RESULTS
+LRT(mod3, null_mod)
+# global_LRT_mod3 <- LRT(mod3, null_mod, boot.repl = 999, nb_cores = 10, seed = 124)
+# data.frame(basic = global_LRT_mod3$basicLRT$p_value, bartlett = global_LRT_mod3$BartBootLRT$p_value, bootstrap = global_LRT_mod3$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -262,8 +265,11 @@ nograzingban <- fitme(globalK ~ lion_density_scale + avgprey_scale + roaduse + t
 ```
 
 ```{r}
-lionLRT_mod3 <- LRT(mod3, nolion, boot.repl = 999, nb_cores = 10, seed = 124)
-data.frame(basic = lionLRT_mod3$basicLRT$p_value, bartlett = lionLRT_mod3$BartBootLRT$p_value, bootstrap = lionLRT_mod3$rawBootLRT$p_value)
+## USE ASYMPTOTIC LRT P-VAL RATHER THAN BOOTSTRAP.
+## THIS ALLOWS US TO BE CONSISTENT IN ALL RESULTS
+LRT(mod3, nolion)
+# lionLRT_mod3 <- LRT(mod3, nolion, boot.repl = 999, nb_cores = 10, seed = 124)
+# data.frame(basic = lionLRT_mod3$basicLRT$p_value, bartlett = lionLRT_mod3$BartBootLRT$p_value, bootstrap = lionLRT_mod3$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -272,8 +278,11 @@ lionCI_mod3
 ```
 
 ```{r}
-preyLRT_mod3<- LRT(mod3, noprey, boot.repl = 999, nb_cores = 10, seed = 124)
-data.frame(basic = preyLRT_mod3$basicLRT$p_value, bartlett = preyLRT_mod3$BartBootLRT$p_value, bootstrap = preyLRT_mod3$rawBootLRT$p_value)
+## USE ASYMPTOTIC LRT P-VAL RATHER THAN BOOTSTRAP.
+## THIS ALLOWS US TO BE CONSISTENT IN ALL RESULTS
+LRT(mod3, noprey)
+# preyLRT_mod3<- LRT(mod3, noprey, boot.repl = 999, nb_cores = 10, seed = 124)
+# data.frame(basic = preyLRT_mod3$basicLRT$p_value, bartlett = preyLRT_mod3$BartBootLRT$p_value, bootstrap = preyLRT_mod3$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -282,8 +291,11 @@ preyCI_mod3
 ```
 
 ```{r}
-diseaseLRT_mod3 <- LRT(mod3, nodisease, boot.repl = 999, nb_cores = 10, seed = 124)
-data.frame(basic = diseaseLRT_mod3$basicLRT$p_value, bartlett = diseaseLRT_mod3$BartBootLRT$p_value, bootstrap = diseaseLRT_mod3$rawBootLRT$p_value)
+## USE ASYMPTOTIC LRT P-VAL RATHER THAN BOOTSTRAP.
+## THIS ALLOWS US TO BE CONSISTENT IN ALL RESULTS
+LRT(mod3, nodisease)
+# diseaseLRT_mod3 <- LRT(mod3, nodisease, boot.repl = 999, nb_cores = 10, seed = 124)
+# data.frame(basic = diseaseLRT_mod3$basicLRT$p_value, bartlett = diseaseLRT_mod3$BartBootLRT$p_value, bootstrap = diseaseLRT_mod3$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -292,8 +304,11 @@ diseaseCI_mod3
 ```
 
 ```{r}
-roaduseLRT_mod3 <- LRT(mod3, noroaduse, boot.repl = 999, nb_cores = 10, seed = 124)
-data.frame(basic = roaduseLRT_mod3$basicLRT$p_value, bartlett = roaduseLRT_mod3$BartBootLRT$p_value, bootstrap = roaduseLRT_mod3$rawBootLRT$p_value)
+## USE ASYMPTOTIC LRT P-VAL RATHER THAN BOOTSTRAP.
+## THIS ALLOWS US TO BE CONSISTENT IN ALL RESULTS
+LRT(mod3, noroaduse)
+# roaduseLRT_mod3 <- LRT(mod3, noroaduse, boot.repl = 999, nb_cores = 10, seed = 124)
+# data.frame(basic = roaduseLRT_mod3$basicLRT$p_value, bartlett = roaduseLRT_mod3$BartBootLRT$p_value, bootstrap = roaduseLRT_mod3$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -302,8 +317,11 @@ roaduseCI_mod3
 ```
 
 ```{r}
-grazingbanLRT <- LRT(mod3, nograzingban, boot.repl = 999, nb_cores = 10, seed = 124)
-data.frame(basic = grazingbanLRT$basicLRT$p_value, bartlett = grazingbanLRT$BartBootLRT$p_value, bootstrap = grazingbanLRT$rawBootLRT$p_value)
+## USE ASYMPTOTIC LRT P-VAL RATHER THAN BOOTSTRAP.
+## THIS ALLOWS US TO BE CONSISTENT IN ALL RESULTS
+LRT(mod3, nograzingban)
+# grazingbanLRT <- LRT(mod3, nograzingban, boot.repl = 999, nb_cores = 10, seed = 124)
+# data.frame(basic = grazingbanLRT$basicLRT$p_value, bartlett = grazingbanLRT$BartBootLRT$p_value, bootstrap = grazingbanLRT$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -533,9 +551,11 @@ plot_lion_marg
 ### Final plot
 
 ```{r}
-plot_avgprey_marg + plot_disease_marg + plot_lion_marg + patchwork::plot_layout(nrow = 1) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
+plot_avgprey_marg + plot_disease_marg + plot_lion_marg + patchwork::plot_layout(nrow = 1) +
+  patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")  &
+  theme(plot.tag.position = c(0.175, 0.975), plot.tag = element_text(size = 17))
 
-ggsave(filename = here::here("analysis/plots/mechanistic_results_new.png"), dpi = 600,
+ggsave(filename = here::here("./plots/mechanistic_results.png"), dpi = 600,
        width = 15, height = 5)
 ```
 
@@ -628,8 +648,178 @@ plot_grazing_marg
 #### Save output
 
 ```{r}
-plot_avgprey_marg + plot_disease_marg + plot_lion_marg + plot_road_marg + plot_grazing_marg + patchwork::plot_layout(nrow = 2, ncol = 3) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
+plot_avgprey_marg + plot_disease_marg + plot_lion_marg + plot_road_marg + plot_grazing_marg +
+  patchwork::plot_layout(nrow = 2, ncol = 3) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")") &
+  theme(plot.tag.position = c(0.175, 0.975), plot.tag = element_text(size = 20))
 
-ggsave(filename = here::here("analysis/plots/supp_mechanistic_results_new.png"), dpi = 600,
+ggsave(filename = here::here("./plots/supp_mechanistic_results.png"), dpi = 600,
+       width = 15, height = 10)
+```
+
+### Partial dependence effects
+
+```{r}
+
+plot_data_pdep <- pdep_effects(mod3, focal_var = "lion_density_scale", length.out = 200) |>
+  ## Unscale values
+  mutate(lion_density = focal_var*sd(mod_data_alldisease_consv$lion_density) + mean(mod_data_alldisease_consv$lion_density))
+
+plot_lion_pdep <- ggplot() +
+  geom_ribbon(data = plot_data_pdep, aes(x = lion_density, ymin = low, ymax = up),
+              fill = "grey75", alpha = 0.6) +
+  geom_line(data = plot_data_pdep, aes(x = lion_density, y = pointp)) +
+  geom_point(data = mod_data_alldisease_consv, aes(x = lion_density, y = globalK),
+             alpha = 0.75, position = position_jitter(width = 0.002, height = 0, seed = 124),
+             size = 2, shape = 21, fill = "grey10", colour = "white") +
+  scale_y_continuous(limits = c(-5, 175),
+                     breaks = seq(0, 175, 25), expand = c(0, 0)) +
+  labs(x = "Lion density (number sighted/km<sup>2</sup>)",
+       y = "Clan carrying capacity") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title.x = element_markdown(colour = "black", size = 15),
+        axis.title.y = element_text(colour = "black", size = 15),
+        legend.position = c(0.425, 0.4),
+        legend.title = element_blank(),
+        legend.background = element_blank(),
+        legend.text = element_text(size = 8))
+
+plot_lion_pdep
+
+```
+
+```{r}
+
+plot_data_pdep <- pdep_effects(mod3, focal_var = "total_disease_percap_scale", length.out = 200) |>
+  ## Unscale values
+  mutate(total_disease_percap = focal_var*sd(mod_data_alldisease_consv$total_disease_percap) + mean(mod_data_alldisease_consv$total_disease_percap))
+
+plot_disease_pdep <- ggplot() +
+  geom_ribbon(data = plot_data_pdep, aes(x = total_disease_percap, ymin = low, ymax = up),
+              fill = "grey75", alpha = 0.6) +
+  geom_line(data = plot_data_pdep, aes(x = total_disease_percap, y = pointp)) +
+  geom_point(data = mod_data_alldisease_consv, aes(x = total_disease_percap, y = globalK),
+             alpha = 0.75, position = position_jitter(width = 0.002, height = 0, seed = 124),
+             size = 2, shape = 21, fill = "grey10", colour = "white") +
+  scale_y_continuous(limits = c(-5, 175),
+                     breaks = seq(0, 175, 25), expand = c(0, 0)) +
+  labs(x = "Proportion of the clan observed\nwith clinical signs of infection",
+       y = "Clan carrying capacity") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title = element_text(colour = "black", size = 15),
+        legend.position = c(0.425, 0.4),
+        legend.title = element_blank(),
+        legend.background = element_blank(),
+        legend.text = element_text(size = 8))
+
+plot_disease_pdep
+
+```
+
+```{r}
+
+plot_data_pdep <- pdep_effects(mod3, focal_var = "avgprey_scale", length.out = 200) |>
+  ## Unscale values
+  mutate(avgprey = focal_var*sd(mod_data_alldisease_consv$avgprey) + mean(mod_data_alldisease_consv$avgprey))
+
+plot_prey_pdep <- ggplot() +
+  geom_ribbon(data = plot_data_pdep, aes(x = avgprey, ymin = low, ymax = up),
+              fill = "grey75", alpha = 0.6) +
+  geom_line(data = plot_data_pdep, aes(x = avgprey, y = pointp)) +
+  geom_point(data = mod_data_alldisease_consv, aes(x = avgprey, y = globalK),
+             alpha = 0.75, position = position_jitter(width = 0.002, height = 0, seed = 124),
+             size = 2, shape = 21, fill = "grey10", colour = "white") +
+  scale_y_continuous(limits = c(-5, 175),
+                     breaks = seq(0, 175, 25), expand = c(0, 0)) +
+  labs(x = "Average prey abundance ranking",
+       y = "Clan carrying capacity") +
+  theme_classic() +
+  theme(axis.text = element_text(colour = "black", size = 12),
+        axis.title = element_text(colour = "black", size = 15),
+        legend.position = c(0.425, 0.4),
+        legend.title = element_blank(),
+        legend.background = element_blank(),
+        legend.text = element_text(size = 8))
+
+plot_prey_pdep
+
+```
+
+```{r}
+
+plot_data_pdep <- pdep_effects(mod3, focal_var = "roaduse")
+
+plot_road_pdep <- ggplot() +
+  geom_point(data = mod_data_alldisease_consv, aes(x = roaduse, y = globalK),
+             alpha = 0.75, position = position_jitter(width = 0.002, height = 0, seed = 124),
+             size = 1.5, shape = 21, fill = "grey10", colour = "white") +
+  geom_violin(data = mod_data_alldisease_consv, aes(x = roaduse, y = globalK),
+              alpha = 0.5, fill = "grey50") +
+  geom_errorbar(data = plot_data_pdep, aes(x = focal_var, ymin = low, ymax = up), width = 0.1) +
+  geom_point(data = plot_data_pdep, aes(x = focal_var, y = pointp), size = 3) +
+  scale_y_continuous(limits = c(-5, 175),
+                     breaks = seq(0, 175, 25), expand = c(0, 0)) +
+  scale_x_discrete(labels = c("Road use restrictions \n active", "Road use restrictions \n inactive")) +
+  labs(x = "",
+       y = "Clan carrying capacity") +
+  theme_classic() +
+  theme(axis.text.y = element_text(colour = "black", size = 12),
+        axis.text.x = element_text(colour = "black", size = 13),
+        axis.title = element_text(colour = "black", size = 15),
+        legend.position = c(0.425, 0.4),
+        legend.title = element_blank(),
+        legend.background = element_blank(),
+        legend.text = element_text(size = 8))
+
+plot_road_pdep
+
+```
+
+```{r}
+
+plot_data_pdep <- pdep_effects(mod3, focal_var = "grazing")
+
+plot_grazing_pdep <- ggplot() +
+  geom_point(data = mod_data_alldisease_consv, aes(x = grazing, y = globalK),
+             alpha = 0.75, position = position_jitter(width = 0.002, height = 0, seed = 124),
+             size = 1.5, shape = 21, fill = "grey10", colour = "white") +
+  geom_violin(data = mod_data_alldisease_consv, aes(x = grazing, y = globalK),
+              alpha = 0.5, fill = "grey50") +
+  geom_errorbar(data = plot_data_pdep, aes(x = focal_var, ymin = low, ymax = up), width = 0.1) +
+  geom_point(data = plot_data_pdep, aes(x = focal_var, y = pointp), size = 3) +
+  scale_y_continuous(limits = c(-5, 175),
+                     breaks = seq(0, 175, 25), expand = c(0, 0)) +
+  scale_x_discrete(labels = c("Grazing restrictions \n active", "Grazing restrictions \n inactive")) +
+  labs(x = "",
+       y = "Clan carrying capacity") +
+  theme_classic() +
+  theme(axis.text.y = element_text(colour = "black", size = 12),
+        axis.text.x = element_text(colour = "black", size = 13),
+        axis.title = element_text(colour = "black", size = 15),
+        legend.position = c(0.425, 0.4),
+        legend.title = element_blank(),
+        legend.background = element_blank(),
+        legend.text = element_text(size = 8))
+
+plot_grazing_pdep
+
+```
+
+```{r}
+plot_prey_pdep + plot_disease_pdep + plot_lion_pdep + patchwork::plot_layout(nrow = 1) +
+  patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")  &
+  theme(plot.tag.position = c(0.175, 0.975), plot.tag = element_text(size = 17))
+
+ggsave(filename = here::here("./plots/mechanistic_results_pdep.png"), dpi = 600,
+       width = 15, height = 5)
+```
+
+```{r}
+plot_prey_pdep + plot_disease_pdep + plot_lion_pdep + plot_road_pdep + plot_grazing_pdep +
+  patchwork::plot_layout(nrow = 2, ncol = 3) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")") &
+  theme(plot.tag.position = c(0.175, 0.975), plot.tag = element_text(size = 20))
+
+ggsave(filename = here::here("./plots/supp_mechanistic_results_pdep.png"), dpi = 600,
        width = 15, height = 10)
 ```

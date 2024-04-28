@@ -27,8 +27,8 @@ Define which simulation type we're using
 #Model 2 (polynomial age and random effect of year nested within clan)
 #Simulations have a variety of start points to reduce initialization bias
 start_year  <- 1997
-end_year    <- 2021
-scale       <- "year"
+end_year    <- 2022
+scale       <- "year" ## For this plot, stick with annual change to make it easier to compare
 ```
 
 # Extract data
@@ -36,7 +36,7 @@ scale       <- "year"
 Extract estimated K
 
 ```{r k_data}
-if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
+if (!file.exists(here::here("./data/Kplot_data.RDS"))) {
   ## EXTRACT ESTIMATED K
   years <- start_year:end_year
   
@@ -47,7 +47,7 @@ if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
                                 
                                 pb_yr$tick()
                                 
-                                txt_files <- list.files(here(paste0("./analysis/STEP1_estimate_K/", year)),
+                                txt_files <- list.files(here(paste0("./STEP1_estimate_K/", year)),
                                                         pattern = ".txt", full.names = TRUE)
                                 
                                 allsims <- purrr::map_df(.x = txt_files,
@@ -79,9 +79,9 @@ if (!file.exists(here::here("./analysis/data/Kplot_data.RDS"))) {
                                 
                               })
   
-  saveRDS(Kplot_data, here::here("./analysis/data/Kplot_data.RDS"))
+  saveRDS(Kplot_data, here::here("./data/Kplot_data.RDS"))
 } else {
-  Kplot_data <- readRDS(here::here("./analysis/data/Kplot_data.RDS"))
+  Kplot_data <- readRDS(here::here("./data/Kplot_data.RDS"))
 }
 ```
 
@@ -90,9 +90,9 @@ Extract real pop data over time
 ```{r N_data}
 ### GENERATED IN STEP0_prepare_data/demographic_data.R
 if (scale == "month") {
-  real_pop <- readRDS(here::here("./analysis/data/Nplot_data_month.RDS"))
+  real_pop <- readRDS(here::here("./data/Nplot_data_month.RDS"))
 } else if (scale == "year") {
-  real_pop <- readRDS(here::here("./analysis/data/Nplot_data_year.RDS"))
+  real_pop <- readRDS(here::here("./data/Nplot_data_year.RDS"))
 }
 
 ```
@@ -336,10 +336,12 @@ dK_data_errorbar <- dK_data_errorbar %>%
     geom_errorbar(data = dN_data_errorbar, aes(x = dK, ymin = lower, ymax = upper)) +
     geom_point(data = plot_data3, aes(x = lambdaK, y = lambdaN),
                shape = 21, colour = "black", fill = "grey50") +
-    geom_point(data = plot_data3 %>% filter(year %in% c(2018, 2019)), aes(x = lambdaK, y = lambdaN),
+    geom_point(data = plot_data3 %>% filter(year %in% c(2018, 2019, 2006, 2001)), aes(x = lambdaK, y = lambdaN),
                shape = 21, colour = "black", fill = "red", size = 2) +
     #Add year text
-    geom_text(data = plot_data3 %>% filter(year %in% c(2018, 2019)), aes(x = lambdaK + 0.1, y = lambdaN - 0.04, label = paste(year, year + 1, sep = "-")),
+    geom_text(data = plot_data3 %>% filter(year %in% c(2018, 2019, 2006, 2001)),
+              aes(x = lambdaK + c(-0.075, 0.075, -0.075, 0.075),
+                  y = lambdaN + c(0.04, 0.04, -0.04, -0.04), label = paste(year, year + 1, sep = "-")),
               force = 7, size = 2.5, max.overlaps = 14) +
     # geom_text(aes(x = c(0.35, 0.35, 1.6, 1.6, 1.15),
     #               y = c(0.5, 1.5, 0.5, 1.5, 1.375),
@@ -364,7 +366,7 @@ dK_data_errorbar <- dK_data_errorbar %>%
           axis.title.y = element_markdown(margin = margin(r = 10)),
           axis.title.x = element_markdown(margin = margin(t = 10))))
 
-ggsave("./analysis/plots/dN_dK_plot_new.png", dpi = 600,
+ggsave(here::here("./plots/dN_dK_plot.png"), dpi = 600,
        width = 6.75,
        height = 3.75)
 
@@ -393,7 +395,7 @@ library(ggrepel)
     geom_errorbar(data = dN_data_errorbar, aes(x = dK, ymin = lower, ymax = upper)) +
     geom_point(data = plot_data3, aes(x = lambdaK, y = lambdaN),
                shape = 21, colour = "black", fill = "grey50") +
-    geom_point(data = plot_data3 %>% filter(year %in% c(2018, 2019)), aes(x = lambdaK, y = lambdaN),
+    geom_point(data = plot_data3 %>% filter(year %in% c(2018, 2019, 2001, 2006)), aes(x = lambdaK, y = lambdaN),
                shape = 21, colour = "black", fill = "red", size = 2) +
     #Add year text
     geom_text_repel(data = plot_data3, aes(x = lambdaK, y = lambdaN, label = year),
@@ -421,7 +423,7 @@ library(ggrepel)
           axis.title.y = element_markdown(margin = margin(r = 10)),
           axis.title.x = element_markdown(margin = margin(t = 10))))
 
-ggsave("./analysis/plots/dN_dK_plot_labelled_new.png", dpi = 600,
+ggsave(here::here("./plots/dN_dK_plot_labelled.png"), dpi = 600,
        width = 6.75,
        height = 3.75)
 
@@ -520,15 +522,20 @@ Plot
    geom_errorbar(data = dN_data_errorbar2, aes(x = median, ymin = lower, ymax = upper), width = 0) +
    geom_point(data = plot_data4b, aes(x = median, y = lambdaN),
               shape = 21, fill = "grey50", colour = "black") + 
-   geom_point(data = plot_data4b %>% filter(year %in% c(2018, 2019)), aes(x = median, y = lambdaN),
+   geom_point(data = plot_data4b %>% filter(year %in% c(2018, 2019, 2001, 2006)), aes(x = median, y = lambdaN),
               shape = 21, colour = "black", fill = "red", size = 2) +
    #Add year text
-   geom_text_repel(data = plot_data4b %>% filter(year %in% c(2018, 2019)), aes(x = median, y = lambdaN, label = year),
-                   force = 7, size = 2.5, max.overlaps = 14) +
+   geom_text(data = plot_data4b %>% filter(year %in% c(2018, 2019, 2001, 2006)),
+                   aes(x = median + c(50, 50, 50, 50),
+                       y = lambdaN + c(-0.03, 0.03, 0.03, 0.03),
+                       label = paste(year, year + 1, sep = "-")),
+             size = 2.5) +
+   # x = lambdaK + c(-0.075, 0.075, -0.075, 0.075),
+   #                y = lambdaN + c(0.04, 0.04, -0.04, -0.04)
    labs(
      # title = "Relationship between K-N and \U03BBN",
      # subtitle = "Errorbars show range of possible values using all estimates of K\nand N in 1st of each month",
-     x = "N - K",
+     x = "N<sub>t</sub> - K<sub>t</sub>",
      y = "\U03BB<sub>N</sub>") +
    coord_equal(ratio = 250/0.5,
                clip = "off",
@@ -550,7 +557,7 @@ Plot
          axis.title.y = element_markdown(margin = margin(r = 10)),
          axis.title.x = element_markdown(margin = margin(t = 10))))
 
-ggsave("./analysis/plots/dN_KN_plot_new.png", dpi = 600,
+ggsave(here::here("./plots/dN_KN_plot.png"), dpi = 600,
        width = 6.75,
        height = 3.75)
 
@@ -566,7 +573,7 @@ ggsave("./analysis/plots/dN_KN_plot_new.png", dpi = 600,
    geom_errorbar(data = dN_data_errorbar2, aes(x = median, ymin = lower, ymax = upper), width = 0) +
    geom_point(data = plot_data4b, aes(x = median, y = lambdaN),
               shape = 21, fill = "grey50", colour = "black") + 
-   geom_point(data = plot_data4b %>% filter(year %in% c(2018, 2019)), aes(x = median, y = lambdaN),
+   geom_point(data = plot_data4b %>% filter(year %in% c(2018, 2019, 2001, 2006)), aes(x = median, y = lambdaN),
               shape = 21, colour = "black", fill = "red", size = 2) +
    #Add year text
    geom_text_repel(data = plot_data4b,
@@ -597,7 +604,7 @@ ggsave("./analysis/plots/dN_KN_plot_new.png", dpi = 600,
          axis.title.y = element_markdown(margin = margin(r = 10)),
          axis.title.x = element_markdown(margin = margin(t = 10))))
 
-ggsave("~/data/simulation_results/analysis/plots/dN_KN_plot_labelled_new.png", dpi = 600,
+ggsave(here::here("./plots/dN_KN_plot_labelled.png"), dpi = 600,
        width = 6.75,
        height = 3.75)
 
@@ -607,18 +614,20 @@ Combine plots
 
 ```{r}
 library(patchwork)
-dN_dK_nolabel + dN_KN_nolabel + patchwork::plot_layout(ncol = 1, nrow = 2) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
+dN_dK_nolabel + dN_KN_nolabel + patchwork::plot_layout(ncol = 1, nrow = 2) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")  &
+    theme(plot.tag.position = c(0.125, 0.975), plot.tag = element_text(size = 17))
 
-ggsave("./analysis/plots/dN_combo_plot_new.png", dpi = 600,
+ggsave(here::here("./plots/dN_combo_plot.png"), dpi = 600,
        width = 6.75,
        height = 7.5)
 ```
 
 ```{r}
 library(patchwork)
-dN_dK_label + dN_KN_label + patchwork::plot_layout(ncol = 1, nrow = 2) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")
+dN_dK_label + dN_KN_label + patchwork::plot_layout(ncol = 1, nrow = 2) + patchwork::plot_annotation(tag_levels = "a", tag_suffix = ")")  &
+    theme(plot.tag.position = c(0.125, 0.975), plot.tag = element_text(size = 17))
 
-ggsave("./analysis/plots/dN_combo_plot_labelled_new.png", dpi = 600,
+ggsave(here::here("./plots/dN_combo_plot_labelled.png"), dpi = 600,
        width = 6.75,
        height = 7.5)
 ```
