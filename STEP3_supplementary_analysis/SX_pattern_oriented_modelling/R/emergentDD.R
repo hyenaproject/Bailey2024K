@@ -1,5 +1,6 @@
 ## Use all simulated outcomes from 2005
 library(ggplot2)
+library(dplyr)
 library(ggtext)
 library(here)
 
@@ -24,7 +25,7 @@ outcome <- purrr::map_df(.x = files, .f = function(file){
   geom_smooth(data = outcome |> filter(date <= as.Date("2025-01-01")), aes(x = Nt, y = lambdaN), method = "lm", se = FALSE) +
   theme_classic() +
   labs(x = "N<sub>t</sub>",
-       y = "\U03BB") +
+       y = "\U03BB<sub>N</sub>") +
   theme_classic() +
   theme(axis.text = element_text(colour = "black", size = 12),
         axis.title.y = element_markdown(colour = "black", size = 15),
