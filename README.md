@@ -6,7 +6,7 @@ Below is a description of the different folders.
 
 ## STEP0_prepare_data (optional)
 
-Generate all data needed for analysis. This step is optional as its code requires access to the Ngorongoro Hyena Project database, which is not publicly available. The final output of all these data extraction tasks is available on Zenodo (https://doi.org/10.5281/zenodo.10955615). To skip this step 0 and directly proceed to step 1, the data hosted on Zenodo should be downloaded and placed into a folder `data` at the root of this repository.
+Generate all data needed for analysis. This step is optional as its code requires access to the Ngorongoro Hyena Project database, which is not publicly available. The final output of all these data extraction tasks is available on Zenodo (https://zenodo.org/doi/10.5281/zenodo.10955614). To skip this step 0 and directly proceed to step 1, the data hosted on Zenodo should be downloaded and placed into a folder `data` at the root of this repository.
 
 The folder `STEP0_prepare_data` includes:
 
