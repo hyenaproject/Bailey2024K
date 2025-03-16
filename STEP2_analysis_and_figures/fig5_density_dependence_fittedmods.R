@@ -1,6 +1,7 @@
 library(dplyr)
 library(ggplot2)
 library(spaMM)
+library(forcats)
 
 # Helper functions --------------------------------------------------------
 

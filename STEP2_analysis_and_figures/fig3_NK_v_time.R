@@ -7,6 +7,8 @@ library(dplyr)
 library(here)
 library(patchwork)
 library(ggtext)
+library(progress)
+library(readr)
 
 ## Define file/folder paths
 start_year  <- 1997

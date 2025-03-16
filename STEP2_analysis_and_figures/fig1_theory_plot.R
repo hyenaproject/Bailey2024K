@@ -1,5 +1,6 @@
 library(dplyr)
 library(ggplot2)
+library(patchwork)
 
 ## Growth of N
 Nt_old <- function(t, N0, K, r){
