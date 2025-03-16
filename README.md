@@ -1,8 +1,20 @@
 # Effects of environmental change on population growth: monitoring time-varying carrying capacity in free-ranging spotted hyenas
 
-This repository includes code and plots for associated with the paper Bailey et al. 2024 currently in pre-print (DOI XXX). This code relies on two separate repositories: [SHIM](https://github.com/hyenaproject/SHIM) and [hyenaR](https://github.com/hyenaproject/hyenaR) for working with data from the Ngorongoro Hyena Project.
+This repository includes code and plots for associated with the paper Bailey et al. 2024 currently in pre-print (DOI XXX). This code relies on two separate repositories: [SHIM](https://github.com/hyenaproject/SHIM) and [hyenaR](https://github.com/hyenaproject/hyenaR) for working with data from the Ngorongoro Hyena Project. These packages can be installed from source (see SETUP below).
 
-Below is a description of the different folders.
+## SETUP
+
+Install the R packages `SHIM` and `hyenaR` from source using available `tar.gz` files provided in this repository. To install these packages from source, use the following code in R:
+
+```
+## Install SHIM
+install.packages("SHIM_0.5.22.tar.gz", repos = NULL, type="source")
+
+## Install hyenaR
+install.packages("hyenaR_0.10.0.tar.gz", repos = NULL, type="source")
+```
+
+Once SHIM and hyenaR are installed, the analysis for the paper can be recreated. Below is a description of each step of the process contained in different folders in this repository.
 
 ## STEP0_prepare_data (optional)
 
