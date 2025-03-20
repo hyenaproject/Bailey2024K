@@ -7,3 +7,4 @@ STEP1_estimate_K/**/*.RDS
 STEP3_supplementary_analysis/**/*.RDS
 data/
 README.html
+.DS_Store
