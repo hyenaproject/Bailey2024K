@@ -1,0 +1,205 @@
+---
+title: "response_to_reviewer"
+format: html
+---
+
+All these plots are create in response to reviewer comments. In long term, could be worth separating them into individual sections.
+
+## Prepare workspace
+
+```{r}
+library(ggplot2)
+library(dplyr)
+```
+
+## PLOT 1: Clans
+
+Many comments from reviewers focus on clan numbers. We need to show how clan size varies over time, how clan size and trends in clan size differ between clans.
+
+```{r}
+### GENERATED IN STEP0_prepare_data/demographic_data.R
+plot_data <- readRDS(here::here("./data/NClanplot_data_separate_year.RDS")) |> 
+  mutate(pop = lay::lay(pick(young:ad_fem), sum),
+         to = date + lubridate::years(1))
+```
+
+General stats:
+
+**Max and min**
+
+```{r}
+## Max & min clan size
+## What's up with Triangle in 2022?! Remove this for now
+plot_data |> 
+  filter(lubridate::year(date) != 2022) |> 
+  summarise(across(young:pop, max, .names = "{.col}_max"),
+            across(young:pop, min, .names = "{.col}_min")) 
+```
+
+```{r}
+plot_data |> 
+  filter(lubridate::year(date) != 2022) |> 
+  filter(pop == min(pop))
+```
+
+
+**Difference in clan size**
+
+```{r}
+## Range clan size
+## What's up with Triangle in 2022?! Remove this for now
+plot_data |> 
+  filter(lubridate::year(date) != 2022) |> 
+  mutate(year = lubridate::year(date)) |> 
+  group_by(year) |> 
+  summarise(across(young:pop, .fns = \(x) abs(diff(range(x))), .names = "{.col}")) |> 
+  filter(pop == max(pop))
+```
+
+```{r}
+plot_data |> 
+  filter(lubridate::year(date) == 2017)
+```
+
+Correlation between clans
+
+```{r}
+corr_data <- plot_data |> 
+  filter(lubridate::year(date) != 2022) |> 
+  select(date, clan, pop) |> 
+  tidyr::pivot_wider(names_from = clan, values_from = pop)
+
+library(corrplot)
+corrplot(cor(corr_data |> select(-date)), method = "number", type = "lower", diag = FALSE, bg = "grey95")
+```
+
+Separate this into period before and after 2012
+
+```{r}
+corrplot(cor(corr_data |> filter(lubridate::year(date) < 2012) |> select(-date)), method = "number", type = "lower", diag = FALSE, bg = "grey95")
+```
+
+```{r}
+corrplot(cor(corr_data |> filter(lubridate::year(date) >= 2012) |> select(-date)), method = "number", type = "lower", diag = FALSE, bg = "grey95")
+```
+
+Plot trends in total pop. Remember, there are totals in a year so they should be lines, not points.
+
+```{r}
+plot_data_lines <- plot_data |> 
+  filter(lubridate::year(date) != 2022) |> 
+  select(date, clan, pop, to) |> 
+  tidyr::pivot_longer(cols = c(date, to))
+
+end_vals <- plot_data %>%
+  filter(lubridate::year(date) != 2022) |> 
+    group_by(clan) %>%
+    slice(n()) |> 
+  ungroup()
+
+ggplot() +
+      geom_line(data = plot_data_lines, aes(x = value, y = pop, colour = clan, group = clan)) +
+      ## X TICKS
+      annotate(geom = "segment",
+               x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
+               xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
+               y = -2, yend = 0,
+               lineend = "round", linejoin = "round") +
+      annotate(geom = "segment",
+               x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
+               xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
+               y = -4, yend = 0,
+               lineend = "round", linejoin = "round") +
+      ## Y TICKS
+      annotate(geom = "segment",
+               x = as.Date("1995-01-01"),
+               xend = as.Date("1995-01-01") - 75,
+               y = seq(0, 150, 25), yend = seq(0, 150, 25),
+               lineend = "round", linejoin = "round") +
+      ## LABELS
+      geom_text(aes(x = as.Date("2023-06-01"),
+                    y = end_vals$pop + c(-0.05, 0.06), colour = end_vals$clan),
+                label = end_vals$clan, size = 3,
+                hjust = 0.5, lineheight = 0.75) +
+      # scale_colour_manual(values = c("red", "grey10")) +
+      scale_x_date(breaks = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 years"),
+                   date_labels = "%Y") +
+      scale_y_continuous(breaks = seq(0, 150, 25),
+                         name = "Number of individuals") +
+      coord_cartesian(expand = FALSE, clip = "off",
+                      ylim = c(0, 150),
+                      xlim = c(as.Date("1995-01-01"), as.Date("2025-01-01"))) +
+      theme_classic() +
+      theme(legend.position = "none",
+            axis.title.x = element_blank(),
+            axis.text.x = element_text(colour = "black",
+                                       margin = margin(t = 10), size = 12),
+            axis.ticks = element_blank(),
+            axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+            axis.title.y = element_text(colour = "black", size = 17, margin = margin(r = 12)),
+            plot.margin = margin(r = 30, t = 10, b = 10))
+```
+
+```{r}
+plot_data_bars <- plot_data |> 
+  filter(lubridate::year(date) != 2022) |> 
+  select(date, clan, pop, to) |> 
+  mutate(year = lubridate::year(date))
+
+end_vals <- plot_data %>%
+  filter(lubridate::year(date) != 2022) |> 
+    group_by(clan) %>%
+    slice(n()) |> 
+  ungroup()
+
+ggplot(data = plot_data_bars) +
+    geom_col(aes(x = date, y = pop, fill = clan),
+             colour = "black", linewidth = 0.25) +
+    ## X TICKS
+    annotate(geom = "segment",
+             x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
+             xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
+             y = -10, yend = 0,
+             lineend = "round", linejoin = "round") +
+    annotate(geom = "segment",
+             x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
+             xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
+             y = -20, yend = 0,
+             lineend = "round", linejoin = "round") +
+    ## Y TICKS
+    annotate(geom = "segment",
+             x = as.Date("1995-01-01"),
+             xend = as.Date("1995-01-01") - 75,
+             y = seq(0, 600, 100), yend = seq(0, 600, 100),
+             lineend = "round", linejoin = "round") +
+    ## LABEL TEXT
+    # annotate(geom = "segment",
+    #          x = end_vals$date[1] + 225,
+    #          xend = end_vals$date[1] + 225,
+    #          y = 5, yend = end_vals$pop[2] - 5,
+    #          lineend = "round", linejoin = "round", linewidth = 0.75) +
+    # annotate(geom = "segment",
+    #          x = end_vals$date[1] + 225,
+    #          xend = end_vals$date[1] + 225,
+    #          y = end_vals$pop[2] + 5, yend = end_vals$pop[2] + end_vals$pop[1] - 5,
+    #          lineend = "round", linejoin = "round", linewidth = 0.75) +
+    # scale_fill_manual(values = rev(c("grey90", "grey55", "grey20"))) +
+    # scale_linewidth_discrete(range = c(0, 0.75)) +
+    scale_x_date(breaks = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 years"),
+                 date_labels = "%Y") +
+    scale_y_continuous(breaks = seq(0, 600, 100),
+                       name = "Number of individuals") +
+    coord_cartesian(expand = FALSE, clip = "off",
+                    ylim = c(0, 600),
+                    xlim = c(as.Date("1995-01-01"), as.Date("2025-01-01"))) +
+    theme_classic() +
+    theme(legend.position = "right",
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(colour = "black",
+                                     margin = margin(t = 10), size = 12),
+          axis.ticks = element_blank(),
+          axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+          axis.title.y = element_text(colour = "black", size = 17, margin = margin(r = 12)),
+          plot.margin = margin(r = 30, t = 10, b = 10))
+```
+
