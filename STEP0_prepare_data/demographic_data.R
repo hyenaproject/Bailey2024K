@@ -39,6 +39,31 @@ if (file.exists(here::here("./data/Nplot_data_separate_1month.RDS"))) {
   saveRDS(real_pop_separate, file = here::here("./data/Nplot_data_separate_1month.RDS"))
 }
 
+## Do the same thing at clan level
+if (file.exists(here::here("./data/NClanplot_data_separate_1month.RDS"))) {
+  real_pop_separate <- readRDS(here::here("./data/NClanplot_data_separate_1month.RDS"))
+} else {
+  ## EXTRACT REAL POP DATA OVER TIME
+  hyenaR::load_package_database.full(db.path)
+
+  ## We include all data with at least 1y observations afterwards. Exclude Jan/Feb 2022 just to make it easier to describe!
+  real_clan_separate <- dplyr::tibble(date = seq(as.Date("1996-05-01"), as.Date("2023-01-01"), by = "1 month")) %>%
+    dplyr::mutate(clan = list(hyenaR::find_clan_name.all())) |>
+    tidyr::unnest(cols = clan) |>
+    dplyr::mutate(young = hyenaR::fetch_clan_number(clan = clan, from = .data$date, to = lead(.data$date),
+                                                   CPUcores = 20, .parallel.min = 50,
+                                                   lifestage = "!adult"),
+                  ad_male = hyenaR::fetch_clan_number(clan = clan, from = .data$date, to = lead(.data$date),
+                                                     CPUcores = 20, .parallel.min = 50,
+                                                     lifestage = "adult", sex = "male"),
+                  ad_fem = hyenaR::fetch_clan_number(clan = clan, from = .data$date, to = lead(.data$date),
+                                                    CPUcores = 20, .parallel.min = 50,
+                                                    lifestage = "adult", sex = "female")
+    )
+
+  saveRDS(real_clan_separate, file = here::here("./data/NClanplot_data_separate_1month.RDS"))
+}
+
 ## Calculate annual
 if (file.exists(here::here("./data/Nplot_data_separate_year.RDS"))) {
   real_pop_separate <- readRDS(here::here("./data/Nplot_data_separate_year.RDS"))
@@ -60,6 +85,31 @@ if (file.exists(here::here("./data/Nplot_data_separate_year.RDS"))) {
     )
 
   saveRDS(real_pop_separate, file = here::here("./data/Nplot_data_separate_year.RDS"))
+}
+
+## Do the same thing at clan level
+if (file.exists(here::here("./data/NClanplot_data_separate_year.RDS"))) {
+  real_clan_separate <- readRDS(here::here("./data/NClanplot_data_separate_year.RDS"))
+} else {
+  ## EXTRACT REAL POP DATA OVER TIME
+  hyenaR::load_package_database.full(db.path)
+
+  ## We include all data with at least 1y observations afterwards. Exclude Jan/Feb 2022 just to make it easier to describe!
+  real_clan_separate <- dplyr::tibble(date = seq(as.Date("1996-05-01"), as.Date("2023-01-01"), by = "1 year")) %>%
+    dplyr::mutate(clan = list(hyenaR::find_clan_name.all())) |>
+    tidyr::unnest(cols = clan) |>
+    dplyr::mutate(young = hyenaR::fetch_clan_number(clan = clan, from = .data$date, to = lead(.data$date),
+                                                    CPUcores = 5, .parallel.min = 50,
+                                                    lifestage = "!adult"),
+                  ad_male = hyenaR::fetch_clan_number(clan = clan, from = .data$date, to = lead(.data$date),
+                                                      CPUcores = 5, .parallel.min = 50,
+                                                      lifestage = "adult", sex = "male"),
+                  ad_fem = hyenaR::fetch_clan_number(clan = clan, from = .data$date, to = lead(.data$date),
+                                                     CPUcores = 5, .parallel.min = 50,
+                                                     lifestage = "adult", sex = "female")
+    )
+
+  saveRDS(real_clan_separate, file = here::here("./data/NClanplot_data_separate_year.RDS"))
 }
 
 ## Population abundance over time (Nt)
