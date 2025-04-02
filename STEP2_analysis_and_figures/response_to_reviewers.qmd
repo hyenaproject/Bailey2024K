@@ -93,51 +93,51 @@ plot_data_lines <- plot_data |>
 
 end_vals <- plot_data %>%
   filter(lubridate::year(date) != 2022) |> 
-    group_by(clan) %>%
-    slice(n()) |> 
+  group_by(clan) %>%
+  slice(n()) |> 
   ungroup()
 
 ggplot() +
-      geom_line(data = plot_data_lines, aes(x = value, y = pop, colour = clan, group = clan)) +
-      ## X TICKS
-      annotate(geom = "segment",
-               x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
-               xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
-               y = -2, yend = 0,
-               lineend = "round", linejoin = "round") +
-      annotate(geom = "segment",
-               x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
-               xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
-               y = -4, yend = 0,
-               lineend = "round", linejoin = "round") +
-      ## Y TICKS
-      annotate(geom = "segment",
-               x = as.Date("1995-01-01"),
-               xend = as.Date("1995-01-01") - 75,
-               y = seq(0, 150, 25), yend = seq(0, 150, 25),
-               lineend = "round", linejoin = "round") +
-      ## LABELS
-      geom_text(aes(x = as.Date("2023-06-01"),
-                    y = end_vals$pop + c(-0.05, 0.06), colour = end_vals$clan),
-                label = end_vals$clan, size = 3,
-                hjust = 0.5, lineheight = 0.75) +
-      # scale_colour_manual(values = c("red", "grey10")) +
-      scale_x_date(breaks = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 years"),
-                   date_labels = "%Y") +
-      scale_y_continuous(breaks = seq(0, 150, 25),
-                         name = "Number of individuals") +
-      coord_cartesian(expand = FALSE, clip = "off",
-                      ylim = c(0, 150),
-                      xlim = c(as.Date("1995-01-01"), as.Date("2025-01-01"))) +
-      theme_classic() +
-      theme(legend.position = "none",
-            axis.title.x = element_blank(),
-            axis.text.x = element_text(colour = "black",
-                                       margin = margin(t = 10), size = 12),
-            axis.ticks = element_blank(),
-            axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
-            axis.title.y = element_text(colour = "black", size = 17, margin = margin(r = 12)),
-            plot.margin = margin(r = 30, t = 10, b = 10))
+  geom_line(data = plot_data_lines, aes(x = value, y = pop, colour = clan, group = clan)) +
+  ## X TICKS
+  annotate(geom = "segment",
+           x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
+           xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
+           y = -2, yend = 0,
+           lineend = "round", linejoin = "round") +
+  annotate(geom = "segment",
+           x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
+           xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
+           y = -4, yend = 0,
+           lineend = "round", linejoin = "round") +
+  ## Y TICKS
+  annotate(geom = "segment",
+           x = as.Date("1995-01-01"),
+           xend = as.Date("1995-01-01") - 75,
+           y = seq(0, 150, 25), yend = seq(0, 150, 25),
+           lineend = "round", linejoin = "round") +
+  ## LABELS
+  geom_text(aes(x = as.Date("2023-06-01"),
+                y = end_vals$pop + c(-0.05, 0.06), colour = end_vals$clan),
+            label = end_vals$clan, size = 3,
+            hjust = 0.5, lineheight = 0.75) +
+  # scale_colour_manual(values = c("red", "grey10")) +
+  scale_x_date(breaks = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 years"),
+               date_labels = "%Y") +
+  scale_y_continuous(breaks = seq(0, 150, 25),
+                     name = "Number of individuals") +
+  coord_cartesian(expand = FALSE, clip = "off",
+                  ylim = c(0, 150),
+                  xlim = c(as.Date("1995-01-01"), as.Date("2025-01-01"))) +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(colour = "black",
+                                   margin = margin(t = 10), size = 12),
+        axis.ticks = element_blank(),
+        axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+        axis.title.y = element_text(colour = "black", size = 17, margin = margin(r = 12)),
+        plot.margin = margin(r = 30, t = 10, b = 10))
 ```
 
 ```{r}
@@ -148,58 +148,341 @@ plot_data_bars <- plot_data |>
 
 end_vals <- plot_data %>%
   filter(lubridate::year(date) != 2022) |> 
-    group_by(clan) %>%
-    slice(n()) |> 
+  group_by(clan) %>%
+  slice(n()) |> 
   ungroup()
 
 ggplot(data = plot_data_bars) +
-    geom_col(aes(x = date, y = pop, fill = clan),
-             colour = "black", linewidth = 0.25) +
-    ## X TICKS
-    annotate(geom = "segment",
-             x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
-             xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
-             y = -10, yend = 0,
-             lineend = "round", linejoin = "round") +
-    annotate(geom = "segment",
-             x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
-             xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
-             y = -20, yend = 0,
-             lineend = "round", linejoin = "round") +
-    ## Y TICKS
-    annotate(geom = "segment",
-             x = as.Date("1995-01-01"),
-             xend = as.Date("1995-01-01") - 75,
-             y = seq(0, 600, 100), yend = seq(0, 600, 100),
-             lineend = "round", linejoin = "round") +
-    ## LABEL TEXT
-    # annotate(geom = "segment",
-    #          x = end_vals$date[1] + 225,
-    #          xend = end_vals$date[1] + 225,
-    #          y = 5, yend = end_vals$pop[2] - 5,
-    #          lineend = "round", linejoin = "round", linewidth = 0.75) +
-    # annotate(geom = "segment",
-    #          x = end_vals$date[1] + 225,
-    #          xend = end_vals$date[1] + 225,
-    #          y = end_vals$pop[2] + 5, yend = end_vals$pop[2] + end_vals$pop[1] - 5,
-    #          lineend = "round", linejoin = "round", linewidth = 0.75) +
-    # scale_fill_manual(values = rev(c("grey90", "grey55", "grey20"))) +
-    # scale_linewidth_discrete(range = c(0, 0.75)) +
-    scale_x_date(breaks = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 years"),
-                 date_labels = "%Y") +
-    scale_y_continuous(breaks = seq(0, 600, 100),
-                       name = "Number of individuals") +
-    coord_cartesian(expand = FALSE, clip = "off",
-                    ylim = c(0, 600),
-                    xlim = c(as.Date("1995-01-01"), as.Date("2025-01-01"))) +
-    theme_classic() +
-    theme(legend.position = "right",
-          axis.title.x = element_blank(),
-          axis.text.x = element_text(colour = "black",
-                                     margin = margin(t = 10), size = 12),
-          axis.ticks = element_blank(),
-          axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
-          axis.title.y = element_text(colour = "black", size = 17, margin = margin(r = 12)),
-          plot.margin = margin(r = 30, t = 10, b = 10))
+  geom_col(aes(x = date, y = pop, fill = clan),
+           colour = "black", linewidth = 0.25) +
+  ## X TICKS
+  annotate(geom = "segment",
+           x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
+           xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
+           y = -10, yend = 0,
+           lineend = "round", linejoin = "round") +
+  annotate(geom = "segment",
+           x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
+           xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
+           y = -20, yend = 0,
+           lineend = "round", linejoin = "round") +
+  ## Y TICKS
+  annotate(geom = "segment",
+           x = as.Date("1995-01-01"),
+           xend = as.Date("1995-01-01") - 75,
+           y = seq(0, 600, 100), yend = seq(0, 600, 100),
+           lineend = "round", linejoin = "round") +
+  ## LABEL TEXT
+  # annotate(geom = "segment",
+  #          x = end_vals$date[1] + 225,
+  #          xend = end_vals$date[1] + 225,
+  #          y = 5, yend = end_vals$pop[2] - 5,
+  #          lineend = "round", linejoin = "round", linewidth = 0.75) +
+  # annotate(geom = "segment",
+  #          x = end_vals$date[1] + 225,
+  #          xend = end_vals$date[1] + 225,
+  #          y = end_vals$pop[2] + 5, yend = end_vals$pop[2] + end_vals$pop[1] - 5,
+  #          lineend = "round", linejoin = "round", linewidth = 0.75) +
+  # scale_fill_manual(values = rev(c("grey90", "grey55", "grey20"))) +
+  # scale_linewidth_discrete(range = c(0, 0.75)) +
+  scale_x_date(breaks = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 years"),
+               date_labels = "%Y") +
+  scale_y_continuous(breaks = seq(0, 600, 100),
+                     name = "Number of individuals") +
+  coord_cartesian(expand = FALSE, clip = "off",
+                  ylim = c(0, 600),
+                  xlim = c(as.Date("1995-01-01"), as.Date("2025-01-01"))) +
+  theme_classic() +
+  theme(legend.position = "right",
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(colour = "black",
+                                   margin = margin(t = 10), size = 12),
+        axis.ticks = element_blank(),
+        axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+        axis.title.y = element_text(colour = "black", size = 17, margin = margin(r = 12)),
+        plot.margin = margin(r = 30, t = 10, b = 10))
 ```
 
+## PLOT 2: Stability of simulations
+
+How can we estimate and plot population stability? Example from 1997
+
+```{r}
+library(dplyr)
+library(ggplot2)
+```
+
+
+```{r}
+year <- 1997
+txt_files <- list.files(here::here(paste0("./STEP1_estimate_K/", year)),
+                        pattern = ".txt", full.names = TRUE)
+
+allsims <- purrr::map_df(.x = txt_files,
+                         .f = function(filepath){
+                           
+                           readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) |> 
+                             dplyr::mutate(sim = stringr::str_extract(filepath, "(?<=_)[0-9]+(?=.txt)"))
+                           
+                         })
+
+## Estimate average (median) monthly pop within each year
+annual_avg <- allsims %>%
+  select(sim, date, pop_size) |>
+  mutate(year = lubridate::year(date)) |>
+  dplyr::group_by(sim, year) |>
+  summarise(window = median(pop_size), .groups = "drop")
+
+overall_avg <- annual_avg |> 
+  group_by(year) |> 
+  summarise(avg = median(window))
+```
+
+```{r}
+## Plot absolute values
+ggplot() +
+  geom_line(data = annual_avg,
+            aes(x = year, y = window, group = sim),
+            linewidth = 0.1, colour = "grey10", alpha = 0.75) +
+  geom_line(data = overall_avg,
+            aes(x = year, y = avg),
+            linewidth = 0.5, colour = "grey10") +
+  ## X TICKS
+  annotate(geom = "segment",
+           x = seq(1995, 2100, by = 5),
+           xend = seq(1995, 2100, by = 5),
+           y = -10, yend = 0,
+           lineend = "round", linejoin = "round") +
+  annotate(geom = "segment",
+           x = seq(2000, 2100, by = 20),
+           xend = seq(2000, 2100, by = 20),
+           y = -20, yend = 0,
+           lineend = "round", linejoin = "round") +
+  ## Y TICKS
+  annotate(geom = "segment",
+           x = 1990,
+           xend = 1990 - 1,
+           y = seq(0, 600, 100), yend = seq(0, 600, 100),
+           lineend = "round", linejoin = "round") +
+  scale_x_continuous(breaks = seq(2000, 2100, by = 20)) +
+  scale_y_continuous(breaks = seq(0, 600, 100),
+                     name = "Number of individuals (annual average)") +
+  coord_cartesian(expand = FALSE, clip = "off",
+                  ylim = c(0, 600),
+                  xlim = c(1990, 2100)) +
+  theme_classic() +
+  theme(legend.position = "right",
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(colour = "black",
+                                   margin = margin(t = 10), size = 12),
+        axis.ticks = element_blank(),
+        axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+        axis.title.y = element_text(colour = "black", size = 14, margin = margin(r = 12)),
+        plot.margin = margin(r = 30, t = 10, b = 10))
+```
+
+### Gelman-Rubin stat
+
+I'm not convinced this is useful (or appropriate) because even if we run for Inf time, we still expect some level of variation due to demographic stochasticity (that is what our model is DESIGNED to do). I think it's more appropriate to look whether each INDIVIDUAL run has stabilised or is still trending.
+
+```{r}
+## Convert into matrix of chains for Bolstad2 package
+## Just an example package to test the idea
+theta <- annual_avg |>
+  select(sim, window) |>
+  tidyr::pivot_wider(names_from = sim, values_from = window) |>
+  tidyr::unnest(cols = 1:max(burnin$sim)) |>
+  as.matrix()
+```
+```{r}
+## We get values very close or above 1.1, which is usually too high
+## Looking at the sims, there is still a lot of variation...however, it's not
+## clear that leaving to run for longer would lead to convergence (or whether
+## "convergence" is even possible with a stochastic simulated pop)
+
+## Gelman-Rubin compares variance between chains to variance within chains
+## We would expect value <1.1 at a minimum to suggest convergence
+Bolstad2::GelmanRubin(theta)
+```
+
+Included two new runs that go for even longer....
+
+```{r}
+txt_files <- list.files(here::here(paste0("./STEP1_estimate_K")),
+                        pattern = ".txt", full.names = TRUE)
+
+allsims_long <- purrr::map_df(.x = txt_files,
+                              .f = function(filepath){
+                                
+                                readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) |> 
+                                  dplyr::mutate(sim = stringr::str_extract(filepath, "(?<=_)[0-9]+(?=.txt)"))
+                                
+                              })
+
+## Estimate average (median) monthly pop within each year
+annual_avg_long <- allsims %>%
+  select(sim, date, pop_size) |>
+  mutate(year = lubridate::year(date)) |>
+  dplyr::group_by(sim, year) |>
+  summarise(window = median(pop_size), .groups = "drop")
+
+overall_avg_long <- annual_avg_long |> 
+  group_by(year) |> 
+  summarise(avg = median(window))
+```
+
+```{r}
+## Plot absolute values
+ggplot() +
+  geom_line(data = annual_avg_long,
+            aes(x = year, y = window, group = sim),
+            linewidth = 0.1, colour = "grey10", alpha = 0.75) +
+  geom_line(data = overall_avg_long,
+            aes(x = year, y = avg),
+            linewidth = 0.5, colour = "grey10") +
+  geom_vline(xintercept = 2100, lty = 2) +
+  ## X TICKS
+  annotate(geom = "segment",
+           x = seq(2000, 2400, by = 10),
+           xend = seq(2000, 2400, by = 10),
+           y = -10, yend = 0,
+           lineend = "round", linejoin = "round") +
+  annotate(geom = "segment",
+           x = seq(2000, 2400, by = 50),
+           xend = seq(2000, 2400, by = 50),
+           y = -20, yend = 0,
+           lineend = "round", linejoin = "round") +
+  ## Y TICKS
+  annotate(geom = "segment",
+           x = 1990,
+           xend = 1990 - 1,
+           y = seq(0, 600, 100), yend = seq(0, 600, 100),
+           lineend = "round", linejoin = "round") +
+  scale_x_continuous(breaks = seq(2000, 2400, by = 50)) +
+  scale_y_continuous(breaks = seq(0, 600, 100),
+                     name = "Number of individuals (annual average)") +
+  coord_cartesian(expand = FALSE, clip = "off",
+                  ylim = c(0, 600),
+                  xlim = c(1990, 2400)) +
+  theme_classic() +
+  theme(legend.position = "right",
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(colour = "black",
+                                   margin = margin(t = 10), size = 12),
+        axis.ticks = element_blank(),
+        axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+        axis.title.y = element_text(colour = "black", size = 14, margin = margin(r = 12)),
+        plot.margin = margin(r = 30, t = 10, b = 10))
+```
+
+### Gewkes convergence diagnostic
+
+```{r}
+## Try Gewkes convergence diagnostic
+## This is just a Z-score to compare start and end of a chain
+## If |Z-score| is >1.96 it suggests non-stationarity (i.e. end and start are different!)
+## Use LaplacesDemon
+## All but a few are considered 'non-stationary' with this method
+LaplacesDemon::Geweke.Diagnostic(theta)
+```
+
+### Heidelberger-Welch Test
+
+```{r}
+## Maybe statistics from time series analysis?
+## Augmeted Dicky-Fuller tests for stationarity (H0 = series is NOT stationary)
+## Only 1 series considered non-stationary
+apply(theta, MARGIN = 2, FUN = \(x){
+  
+  tseries::adf.test(x)$p.value
+  
+})
+```
+
+```{r}
+## Heidelberger-Welch Test: More aimed at discarding 'unconverged' parts
+## Autocorrelation Analysis (IAT fn in LaplacesDemon).
+## Testing for low auto-correlation seems meaningless because we KNOW our data are auto-correlated.
+```
+
+What if we do the same thing using some larger sliding window (e.g. 10 years)
+
+```{r}
+## Estimate average (median) monthly pop within each year
+annual_avg_10y <- purrr::map_dfr(.x = seq(min(annual_avg$year),
+                                          max(annual_avg$year)-10, 1), .f = \(x){
+  allsims %>%
+    select(sim, date, pop_size) |>
+    mutate(year = lubridate::year(date)) |> 
+    filter(year %in% seq(x, x+9, 1)) |> 
+    group_by(sim) |> 
+    summarise(window = median(pop_size)) |> 
+    mutate(year = x+5)
+})
+
+overall_avg_10y <- annual_avg_10y |> 
+  group_by(year) |> 
+  summarise(avg = median(window))
+```
+
+```{r}
+## Plot absolute values
+ggplot() +
+  geom_line(data = annual_avg_10y,
+            aes(x = year, y = window, group = sim),
+            linewidth = 0.1, colour = "grey10", alpha = 0.75) +
+  geom_line(data = overall_avg_10y,
+            aes(x = year, y = avg),
+            linewidth = 0.5, colour = "grey10") +
+  ## X TICKS
+  annotate(geom = "segment",
+           x = seq(1995, 2100, by = 5),
+           xend = seq(1995, 2100, by = 5),
+           y = -10, yend = 0,
+           lineend = "round", linejoin = "round") +
+  annotate(geom = "segment",
+           x = seq(2000, 2100, by = 20),
+           xend = seq(2000, 2100, by = 20),
+           y = -20, yend = 0,
+           lineend = "round", linejoin = "round") +
+  ## Y TICKS
+  annotate(geom = "segment",
+           x = 1990,
+           xend = 1990 - 1,
+           y = seq(0, 600, 100), yend = seq(0, 600, 100),
+           lineend = "round", linejoin = "round") +
+  scale_x_continuous(breaks = seq(2000, 2100, by = 20)) +
+  scale_y_continuous(breaks = seq(0, 600, 100),
+                     name = "Number of individuals (annual average)") +
+  coord_cartesian(expand = FALSE, clip = "off",
+                  ylim = c(0, 600),
+                  xlim = c(1990, 2100)) +
+  theme_classic() +
+  theme(legend.position = "right",
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(colour = "black",
+                                   margin = margin(t = 10), size = 12),
+        axis.ticks = element_blank(),
+        axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+        axis.title.y = element_text(colour = "black", size = 14, margin = margin(r = 12)),
+        plot.margin = margin(r = 30, t = 10, b = 10))
+```
+
+```{r}
+## Convert into matrix of chains for Bolstad2 package
+## Just an example package to test the idea
+theta <- annual_avg_10y |>
+  select(sim, window) |>
+  tidyr::pivot_wider(names_from = sim, values_from = window) |>
+  tidyr::unnest(cols = 1:max(burnin$sim)) |>
+  as.matrix()
+```
+
+```{r}
+## Try Gewkes convergence diagnostic
+## This is just a Z-score to compare start and end of a chain
+## If |Z-score| is >1.96 it suggests non-stationarity (i.e. end and start are different!)
+## Use LaplacesDemon
+## All but a few are considered 'non-stationary' with this method
+LaplacesDemon::Geweke.Diagnostic(theta)
+```
