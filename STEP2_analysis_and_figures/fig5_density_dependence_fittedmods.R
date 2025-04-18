@@ -483,4 +483,87 @@ ggplot(DDtable) +
        x = "Event") +
   theme_bw()
 
+################
 
+## Try fitting a model where we only include prime age females
+## See if this looks reasonable
+
+pdep_compute_fixedage <- function(model, data, fixed_age, fixed_clan = "A") {
+
+  data$age <- fixed_age
+  data$start_clan <- fixed_clan
+
+  data$rank_category2 <- "top"
+  pdep_top <- pdep_effects(model, "clan_size", newdata = data, focal_values = seq(5, 145, 5))
+  pdep_top$rank_category2 <- "top"
+
+  data$rank_category2 <- "middle"
+  pdep_middle <- pdep_effects(model, "clan_size", newdata = data, focal_values = seq(5, 145, 5))
+  pdep_middle$rank_category2 <- "middle"
+
+  data$rank_category2 <- "bottom"
+  pdep_low <- pdep_effects(model, "clan_size", newdata = data, focal_values = seq(5, 145, 5))
+  pdep_low$rank_category2 <- "bottom"
+
+  pdep_all <- rbind(pdep_top, pdep_middle, pdep_low)
+  pdep_all$rank_category2 <- factor(pdep_all$rank_category2, levels = c("top", "middle", "bottom"))
+  pdep_all
+}
+
+prime_age_fem <- pdep_compute_fixedage(model_list$allF, model_list$allF$data, fixed_age = 50)
+
+real_data <- model_list$allF$data |>
+  filter(age >= 36 & age <= 60 & start_clan == "A") |>
+  mutate(clan_size_group = (clan_size %/% 20)*20 + 10) |>
+  group_by(clan_size_group, rank_category2) |>
+  summarise(binom::binom.wilson(x = sum(surv), n = n()))
+
+surv_panel_facets <- ggplot() +
+  geom_errorbar(data = real_data,
+                aes(x = clan_size_group, ymin = lower, ymax = upper,
+                    group = rank_category2),
+                width = 0) +
+  geom_point(data = real_data,
+             aes(x = clan_size_group, y = mean,
+                 group = rank_category2)) +
+  geom_ribbon(data = prime_age_fem,
+              aes(y = pointp , x = focal_var, col = rank_category2,
+                  ymin = low, ymax = up), alpha = 0.3, linetype = "dotted", fill = NA, linewidth = 0.5) +
+  geom_line(data = prime_age_fem,
+            aes(y = pointp , x = focal_var, col = rank_category2),
+            linewidth = 1) +
+  facet_wrap(~ rank_category2, scales = "free_y", ncol = 4) +
+  labs(x = "Number of individuals in the clan", y = "Predicted probability of event",
+       colour = "Social rank", fill = "Social rank") +
+  coord_cartesian(clip = "off",
+                  expand = FALSE,
+                  ylim = c(surv_ymin, surv_ymax),
+                  xlim = c(xmin, xmax)) +
+  annotate(geom = "segment",
+           y = surv_ymin, yend = surv_ymin-(surv_ymax-surv_ymin)*bigtick_scale,
+           x = seq(xmin, xmax, by = 20),
+           xend = seq(xmin, xmax, by = 20),
+           lineend = "round", linejoin = "round") +
+  annotate(geom = "segment",
+           y = surv_ymin, yend = surv_ymin-(surv_ymax-surv_ymin)*smalltick_scale,
+           x = seq(xmin, xmax, by = 5),
+           xend = seq(xmin, xmax, by = 5),
+           lineend = "round", linejoin = "round") +
+  scale_y_continuous(minor_breaks = NULL) +
+  scale_x_continuous(minor_breaks = NULL, breaks = seq(xmin, xmax, 20)) +
+  scale_fill_manual(values = c("#0075C4", "#00783C", "#BA2D0B", "grey50")) +
+  scale_colour_manual(values = c("#0075C4", "#00783C", "#BA2D0B", "grey50")) +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text = element_text(colour = "black"),
+        axis.text.x = element_text(margin = margin(t = 4)),
+        axis.title = element_blank(),
+        axis.ticks.x = element_blank(),
+        strip.text = element_text(colour = "black"),
+        strip.background = element_rect(linewidth = 0.5),
+        panel.spacing = unit(0.5, "cm"),
+        panel.background = element_rect(linewidth = 0.5, colour = "black"),
+        plot.margin = margin(b = 5, t = 5, r = 5))
+
+ggsave(surv_panel_facets, filename = here::here("./plots/model_DD_plot_survfacets.png"), dpi = 600,
+       width = 8, height = 5)
