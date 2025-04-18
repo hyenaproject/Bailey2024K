@@ -129,13 +129,12 @@ real_pop_separate %>%
 ## Trend in whole period
 
 ```{r}
-real_pop_growth <- real_pop |> 
-  filter(lubridate::year(date) <= end_year) |> 
+real_pop <- real_pop |> 
   mutate(year = lubridate::year(date),
          n = 1:n())
 
-N_model <- fitme(pop_size ~ year + AR1(1|n), data = real_pop_growth, family = "gaussian")
-N_model_null <- fitme(pop_size ~ 1 + AR1(1|n), data = real_pop_growth, family = "gaussian")
+N_model <- fitme(pop_size ~ year + AR1(1|n), data = real_pop, family = "poisson")
+N_model_null <- fitme(pop_size ~ 1 + AR1(1|n), data = real_pop, family = "poisson")
 
 summary(N_model)
 ```
@@ -152,12 +151,10 @@ confint(N_model, parm = "year")
 
 ```{r}
 real_pop_growth <- real_pop |> 
-  filter(lubridate::year(date) <= growth_period_until) |> 
-  mutate(year = lubridate::year(date),
-         n = 1:n())
+  filter(year <= growth_period_until)
 
-N_model <- fitme(pop_size ~ year + AR1(1|n), data = real_pop_growth, family = "gaussian")
-N_model_null <- fitme(pop_size ~ 1 + AR1(1|n), data = real_pop_growth, family = "gaussian")
+N_model <- fitme(pop_size ~ year + AR1(1|n), data = real_pop_growth, family = "poisson")
+N_model_null <- fitme(pop_size ~ 1 + AR1(1|n), data = real_pop_growth, family = "poisson")
 
 summary(N_model)
 ```
@@ -173,13 +170,11 @@ confint(N_model, parm = "year")
 ## Trend after growth period
 
 ```{r}
-real_pop_growth <- real_pop |> 
-  filter(lubridate::year(date) > growth_period_until) |> 
-  mutate(year = lubridate::year(date),
-         n = 1:n())
+real_pop_aftergrowth <- real_pop |> 
+  filter(year > growth_period_until)
 
-N_model <- fitme(pop_size ~ year + AR1(1|n), data = real_pop_growth, family = "gaussian")
-N_model_null <- fitme(pop_size ~ 1 + AR1(1|n), data = real_pop_growth, family = "gaussian")
+N_model <- fitme(pop_size ~ year + AR1(1|n), data = real_pop_aftergrowth, family = "poisson")
+N_model_null <- fitme(pop_size ~ 1 + AR1(1|n), data = real_pop_aftergrowth, family = "poisson")
 
 summary(N_model)
 ```
@@ -338,13 +333,13 @@ Gaussian model is best (slightly better than negbin). We will look at both to se
 
 #### Model results and CI
 
-##### Gaussian model
+##### Poisson model
 
 LRT to compare model to null
 
 ```{r}
-global_mod <- fitme(globalK ~ year, data = poisson_data, family = "gaussian")
-null_mod   <- fitme(globalK ~ 1, data = poisson_data, family = "gaussian")
+global_mod <- fitme(globalK ~ year, data = poisson_data, family = spaMM::negbin2())
+null_mod   <- fitme(globalK ~ 1, data = poisson_data, family = spaMM::negbin2())
 
 summary(global_mod)
 ```
@@ -449,7 +444,7 @@ ggplot(data = plot_data) +
 ```{r Ktc_gaussian}
 ## Fit gaussian models for comparison
 ## Gaussian is easiest fit and can be compared with other mods.
-K_model_perclan_gaussian <- fitme(median ~ year:name + name + AR1(1|n), data = plot_data, family = "gaussian")
+K_model_perclan_gaussian <- fitme(median ~ year:name + name + AR1(1|n), data = plot_data, family = "poisson")
 
 ```
 
@@ -476,13 +471,14 @@ summary(K_model_perclan_gaussian)
 ```
 
 ```{r LRT_Ktc}
-global_mod <- fitme(median ~ year:name + name + AR1(1|n), data = plot_data, family = "gaussian")
-null_mod   <- fitme(median ~ name + AR1(1|n), data = plot_data, family = "gaussian")
-summary(global_mod)
+global_mod <- fitme(median ~ year:name + name + AR1(1|n), data = plot_data, family = "poisson")
+null_mod   <- fitme(median ~ name + AR1(1|n), data = plot_data, family = "poisson")
 ```
+
 ```{r}
 ## Need to bootstrap this, it takes some time
 LRT(global_mod, null_mod)
+# LRT_result_gaussian <- LRT(global_mod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
 # data.frame(basic = LRT_result_gaussian$basicLRT$p_value, bartlett = LRT_result_gaussian$BartBootLRT$p_value, bootstrap = LRT_result_gaussian$rawBootLRT$p_value)
 ```
 
@@ -523,14 +519,15 @@ spaMM::confint.HLfit(global_mod, parm = "year:nameT")
 ## Kt in growth period
 
 ```{r}
-K_model_growthperiod <- fitme(globalK ~ year + AR1(1|n), data = poisson_data %>% filter(year <= growth_period_until), family = "gaussian")
-null_mod <- fitme(globalK ~ 1 + AR1(1|n), data = poisson_data %>% filter(year <= growth_period_until), family = "gaussian")
+K_model_growthperiod <- fitme(globalK ~ year + AR1(1|n), data = poisson_data %>% filter(year <= growth_period_until), family = "poisson")
+null_mod <- fitme(globalK ~ 1 + AR1(1|n), data = poisson_data %>% filter(year <= growth_period_until), family = "poisson")
 summary(K_model_growthperiod)
 ```
 ```{r}
 ## Asympototic for consistency
 LRT(K_model_growthperiod, null_mod)
-# LRT(K_model_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+# LRT_result_gaussian <- LRT(K_model_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+# data.frame(basic = LRT_result_gaussian$basicLRT$p_value, bartlett = LRT_result_gaussian$BartBootLRT$p_value, bootstrap = LRT_result_gaussian$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -545,20 +542,17 @@ confint(K_model_growthperiod, parm = "year")
 
 ```{r}
 K_model_perclan_growthperiod <- fitme(median ~ year:name + name + AR1(1|n),
-                                      data = plot_data %>% filter(year <= growth_period_until), family = "gaussian")
+                                      data = plot_data %>% filter(year <= growth_period_until), family = "poisson")
 
 null_mod <- fitme(median ~ name + AR1(1|n),
-                  data = plot_data %>% filter(year <= growth_period_until), family = "gaussian")
+                  data = plot_data %>% filter(year <= growth_period_until), family = "poisson")
 summary(K_model_perclan_growthperiod)
 ```
 ```{r}
 ## Asympototic for consistency
 LRT(K_model_perclan_growthperiod, null_mod)
-# LRT(K_model_perclan_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
-```
-
-```{r}
-summary(K_model_perclan_growthperiod)
+# LRT_result_gaussian <- LRT(K_model_perclan_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+# data.frame(basic = LRT_result_gaussian$basicLRT$p_value, bartlett = LRT_result_gaussian$BartBootLRT$p_value, bootstrap = LRT_result_gaussian$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -596,14 +590,15 @@ spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameT")
 ## Kt after growth period
 
 ```{r}
-K_model_growthperiod <- fitme(globalK ~ year + AR1(1|n), data = poisson_data %>% filter(year > growth_period_until), family = "gaussian")
-null_mod <- fitme(globalK ~ 1 + AR1(1|n), data = poisson_data %>% filter(year > growth_period_until), family = "gaussian")
+K_model_growthperiod <- fitme(globalK ~ year + AR1(1|n), data = poisson_data %>% filter(year > growth_period_until), family = "poisson")
+null_mod <- fitme(globalK ~ 1 + AR1(1|n), data = poisson_data %>% filter(year > growth_period_until), family = "poisson")
 summary(K_model_growthperiod)
 ```
 ```{r}
 ## Asympototic for consistency
 LRT(K_model_growthperiod, null_mod)
-# LRT(K_model_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+# LRT_result_gaussian <- LRT(K_model_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+# data.frame(basic = LRT_result_gaussian$basicLRT$p_value, bartlett = LRT_result_gaussian$BartBootLRT$p_value, bootstrap = LRT_result_gaussian$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -618,16 +613,17 @@ confint(K_model_growthperiod, parm = "year", boot_args = list(nsim = 999, nb_cor
 
 ```{r}
 K_model_perclan_growthperiod <- fitme(median ~ year:name + name + AR1(1|n),
-                                      data = plot_data %>% filter(year > growth_period_until), family = "gaussian")
+                                      data = plot_data %>% filter(year > growth_period_until), family = "poisson")
 
 null_mod <- fitme(median ~ name + AR1(1|n),
-                  data = plot_data %>% filter(year > growth_period_until), family = "gaussian")
+                  data = plot_data %>% filter(year > growth_period_until), family = "poisson")
 summary(K_model_perclan_growthperiod)
 ```
 ```{r}
 ## Asympototic for consistency
 LRT(K_model_perclan_growthperiod, null_mod)
-# LRT(K_model_perclan_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+# LRT_result_gaussian <- LRT(K_model_perclan_growthperiod, null_mod, boot.repl = 999, nb_cores = 10, seed = 123)
+# data.frame(basic = LRT_result_gaussian$basicLRT$p_value, bartlett = LRT_result_gaussian$BartBootLRT$p_value, bootstrap = LRT_result_gaussian$rawBootLRT$p_value)
 ```
 
 ```{r}
@@ -726,6 +722,7 @@ null_mod   <- fitme(cbind(ad_male, ad_fem) ~ 1 + AR1(1|n), data = ratio_data, fa
 
 summary(global_mod)
 ```
+
 ```{r}
 ## Fails with bootstrap...is it because we're using cbind?!
 LRT(global_mod, null_mod)
