@@ -105,178 +105,120 @@ if (file.exists(here::here("./data/model_data.RDS"))) {
 
 ## Create utility fn
 
-This function is used to compare models with different link functions using AIC.
+Refit a model with different exponent for clan size.
 
 ```{r}
-## Can add "cloglog" and "cauchit" to linkfn if you want, but this can struggle to converge
-compare_linkfn <- function(formula, ..., linkfn = c("logit", "probit")) {
+fit_exp <- function(x, model, train_data, verbose = FALSE){
   
-  all_mods <- lapply(linkfn, FUN = \(link){
-    spaMM::fitme(formula, ..., family = binomial(link = link))
-  })
-  names(all_mods) <- linkfn
-  
-  AICs <- data.frame(linkfn = linkfn,
-                     AIC = sapply(all_mods, FUN = \(mod){
-                       AIC(mod, verbose = FALSE)[1]
-                     })) %>% 
-    dplyr::arrange(AIC)
-  
-  print(AICs)
-  return(all_mods)
-}
-```
-
-Fit models with different exponents on clan size...
-
-```{r}
-fit_exp <- function(x, model, data, verbose){
-  
-  data$old_clan_size <- data$clan_size
-  data$clan_size     <- data$clan_size^x
+  train_data$old_clan_size <- train_data$clan_size
+  train_data$clan_size     <- train_data$clan_size^x
   
   if (verbose) {
-    mod <- update(model, data = data, family = family(model))
+    mod <- update(model, data = train_data, family = family(model))
   } else {
-    mod <- suppressMessages(update(model, data = data, family = family(model))) 
+    mod <- suppressMessages(update(model, data = train_data, family = family(model))) 
   }
   return(mod)
 }
 ```
 
-Function to calculate Brier scores. This can be used as an alternative to optimising on log likelihood.
+Calculate Brier score for a given model
 
 ```{r}
 ## NOTE: Data expects to be already filtered with our output (e.g. surv) in a column called 'event'
 ## Also see DescTools::BrierScore
 ## Alternative, Metrics::logLoss
-calc_brierScore <- function(data, model){
+calc_brierScore <- function(model, test_data, verbose = TRUE){
   
   ## Predict outcomes...
-  data$predict <- as.numeric(spaMM::predict.HLfit(object = model, newdata = data))
+  data$predict <- as.numeric(spaMM::predict.HLfit(object = model, newdata = test_data))
   ## Convert observed outcomes (TRUE/FALSE) to integer
   data$event <- as.numeric(data$event)
   
   ## Calculate Brier score
   Brier_score <- (1/nrow(data))*sum((data$predict - data$event)^2)
   
+  if (verbose) {
+    print(paste("Brier score:", Brier_score)) 
+  }
+  
   return(Brier_score)
   
 }
 ```
 
-Extract model log likelihood for different exponents
+Calculate all values for a model
 
 ```{r}
-exp_estimation <- function(x, data, model, pb, verbose = TRUE, metric = "logLik", test_data){
+est_accuracy <- function(model, test_data, name = "", verbose = TRUE, ...){
   
-  if (!missing(pb)) {
-    pb$tick() 
-  }
+  ## Predict outcomes...
+  predict <- as.numeric(spaMM::predict.HLfit(object = model, newdata = test_data))
+  ## Convert observed outcomes (TRUE/FALSE) to integer
+  event <- as.numeric(test_data$event)
   
-  mod <- fit_exp(x = x, data = data, model = model, verbose = verbose)
-  
-  if (metric == "logLik"){
-    mod_loglik <- logLik(mod)[[1]]
-    
-    if (verbose) {
-      print(paste("exponent:", x, ", loglik:", mod_loglik)) 
-    }
-    
-    return(mod_loglik) 
-  } else if (metric == "Brier"){
-    
-    ## Round to 4dp
-    mod_Brier <- calc_brierScore(data = test_data, model = mod)
-    
-    if (verbose) {
-      print(paste("exponent:", x, ", Brier score:", mod_Brier)) 
-    }
-    
-    return(mod_Brier)
-    
-  } else {
-    stop("'metric' should be logLik or Brier")
-  }
+  tibble(name = name,
+         mod = list(model),
+         logLik = logLik(model)[[1]],
+         logLoss = Metrics::logLoss(event, predict),
+         Brier = DescTools::BrierScore(x = event, pred = predict),
+         ...)
   
 }
 ```
 
-Carry out likelihood profiling with different exponent values
+Refit and assess a model based with different exponent for clan size.
 
 ```{r}
-exp_profiling <- function(exp, data, model, optimize = TRUE, metric = "logLik", test_data, ...){
+fit_and_est <- function(exp, model, train_data, test_data, verbose = TRUE, pb = NULL){
   
-  if (metric == "logLik"){
-    pb <- progress::progress_bar$new(total = length(exp))
-    manual_loglik_opt <- sapply(exp, FUN = exp_estimation, data = data, model = model, pb = pb, verbose = FALSE)
-    plot_data <- data.frame(exp = exp,
-                            loglik = manual_loglik_opt)
-    
-    ## Include this if model struggles to optimize
-    if (optimize) {
-      algo_loglik_optim <- optimize(exp_estimation, lower = min(exp), upper = max(exp), data = data, model = model, verbose = FALSE,
-                                    maximum = TRUE, ...) 
-    } else {
-      algo_loglik_optim <- list()
-      algo_loglik_optim$objective <- max(plot_data$loglik)
-      algo_loglik_optim$maximum <- plot_data$exp[plot_data$loglik == max(plot_data$loglik)]
-    }
-    
-    loglik_1    <- exp_estimation(x = 1, data = data, model = model, verbose = FALSE)
-    loglik_best <- exp_estimation(x = algo_loglik_optim$maximum, data = data, model = model, verbose = FALSE)
-    
-    pval <- pchisq(-2 * (loglik_1 - loglik_best), df = 1, lower.tail = FALSE)
-    
-    return(list(optim = algo_loglik_optim,
-                data = plot_data,
-                plot = ggplot(data = plot_data) +
-                  geom_hline(yintercept = algo_loglik_optim$objective - qchisq(p = 0.95, df = 1)/2,
-                             lty = 2) +
-                  geom_line(aes(x = exp, y = loglik)) +
-                  geom_point(aes(x = exp, y = loglik)) +
-                  geom_point(aes(x = algo_loglik_optim$maximum, y = loglik_best),
-                             size = 3, colour = "red") +
-                  scale_x_continuous(limits = c(min(exp), max(exp)),
-                                     breaks = seq(min(exp), max(exp), 1)) +
-                  labs(title = paste("P-value difference between exp=1 and best exponent", round(algo_loglik_optim$maximum, 2), ":\n", round(pval, digits = 2), sep = " ")) +
-                  theme_bw()))
-    
-  } else if(metric == "Brier"){
-    
-    pb <- progress::progress_bar$new(total = length(exp))
-    manual_Brier_opt <- sapply(exp, FUN = exp_estimation, data = data, model = model, pb = pb, verbose = FALSE, metric = "Brier", test_data = test_data)
-    plot_data <- data.frame(exp = exp,
-                            Brier = manual_Brier_opt)
-    
-    ## Include this if model struggles to optimize
-    if (optimize) {
-      algo_Brier_optim <- optimize(exp_estimation, lower = min(exp), upper = max(exp), data = data, model = model, verbose = FALSE,
-                                   metric = "Brier", test_data = test_data,
-                                   maximum = FALSE, ...) 
-    } else {
-      algo_Brier_optim <- list()
-      algo_Brier_optim$objective <- min(plot_data$Brier)
-      ## Because we round our Brier scores, we can get multiple matches
-      algo_Brier_optim$minimise <- plot_data$exp[plot_data$Brier == min(plot_data$Brier)]
-    }
-    
-    Brier_best <- exp_estimation(x = algo_Brier_optim$minimise, data = data, model = model, verbose = FALSE, metric = "Brier", test_data = test_data)
-    
-    return(list(optim = algo_Brier_optim, 
-                data = plot_data,
-                plot = ggplot(data = plot_data) +
-                  # geom_hline(yintercept = algo_loglik_optim$objective - qchisq(p = 0.95, df = 1)/2,
-                  #            lty = 2) +
-                  geom_line(aes(x = exp, y = Brier)) +
-                  geom_point(aes(x = exp, y = Brier)) +
-                  geom_point(aes(x = algo_Brier_optim$minimise, y = Brier_best),
-                             size = 3, colour = "red") +
-                  scale_x_continuous(limits = c(min(exp), max(exp)),
-                                     breaks = seq(min(exp), max(exp), 1)) +
-                  theme_bw()))
-    
+  if (!is.null(pb)){
+    pb$tick()
   }
+  
+  refit_model <- fit_exp(x = exp, model = model, train_data = train_data, verbose = verbose)
+  
+  est_accuracy(refit_model, test_data, name = paste("Exp:", exp), verbose = verbose, exponent = exp)
+  
+}
+```
+
+Refit for multiple exponents and estimate fit.
+
+```{r}
+exp_profiling <- function(exp, model, train_data, test_data){
+  
+  pb <- progress::progress_bar$new(total = length(exp))
+  manual_loglik_opt <- lapply(exp, FUN = fit_and_est, train_data = train_data, test_data = test_data, model = model, verbose = FALSE, pb = pb)
+  
+  ## Create plot w/ different metrics
+  all_data <- manual_loglik_opt |> 
+    dplyr::bind_rows()
+  
+  ## Calculate p-value difference w/ 1 for logLik
+  pval <- pchisq(-2 * (all_data$logLik[all_data$exponent == 1] - all_data$logLik[all_data$logLik == max(all_data$logLik)]), df = 1, lower.tail = FALSE)
+  
+  plot_data <- all_data |> 
+    tidyr::pivot_longer(cols = logLik:Brier, names_to = "metric")
+  
+  output_plot <- ggplot(data = plot_data) +
+    geom_hline(data = data.frame(y = all_data$logLik[all_data$logLik == max(all_data$logLik)] - qchisq(p = 0.95, df = 1)/2,
+                                 metric = "logLik"),
+               aes(yintercept = y),
+               lty = 2) +
+    geom_text(data = data.frame(y = max(all_data$logLik),
+                                metric = "logLik",
+                                label = paste0("pval: ", round(pval, 2))),
+              aes(y = y, x = mean(exp), label = label)) +
+    geom_line(aes(x = exponent, y = value)) +
+    geom_point(aes(x = exponent, y = value)) +
+    scale_x_continuous(limits = range(exp),
+                       breaks = exp) +
+    theme_bw() +
+    facet_wrap(facets = ~metric, scales = "free_y")
+  
+  return(list(plot = output_plot,
+              data = all_data))
   
 }
 ```
@@ -302,14 +244,36 @@ test_data <- model_data$all |>
 
 
 ```{r}
-F_surv_mod_yr <- compare_linkfn(surv ~ poly(age, 2)*rank_category2 +
-                                  clan_size +
-                                  ## Based on reviewer comments we may also want to add ID but
-                                  ## this takes ages to converge on my Mac (need on server I guess)
-                                  ## leaving out for now
-                                  clan_size:rank_category2 + start_clan + (1|start_clan:year),
-                                data = train_data,
-                                method = "PQL/L")
+null_mod <- spaMM::fitme(surv ~ 1,
+                         data = train_data,
+                         method = "PQL/L", family = binomial(link = "logit"))
+
+F_surv_mod_logit <- spaMM::fitme(surv ~ poly(age, 2)*rank_category2 +
+                                   clan_size +
+                                   ## Based on reviewer comments we may also want to add ID but
+                                   ## this takes ages to converge on my Mac (need on server I guess)
+                                   ## leaving out for now
+                                   clan_size:rank_category2 + start_clan + (1|start_clan:year),
+                                 data = train_data,
+                                 method = "PQL/L", family = binomial(link = "logit"))
+```
+
+Fit different exponents and compare to null model
+
+```{r}
+best_fit <- exp_profiling(exp = seq(0, 2, 0.1), F_surv_mod_logit, train_data, test_data)
+best_fit$plot
+```
+
+```{r}
+est_accuracy(null_mod, test_data, name = "null") |> 
+  select(-mod) |> 
+  dplyr::bind_rows(best_fit$data |> select(-mod))
+```
+
+```{r}
+best_fit2 <- exp_profiling(exp = seq(0.8, 1.2, length.out = 15), F_surv_mod_logit, train_data, test_data)
+best_fit2$plot
 ```
 
 Logit is the best using AIC. What about with Brier score? Does it affect our predictive power?
@@ -381,12 +345,12 @@ For simplicity, we stick with no exponent (i.e. x = 1).
 train_data <- model_data$all |>
   dplyr::filter(year <= end_yr) |> 
   dplyr::filter(!is.na(.data$rank_category) & .data$sex == "male" & !is.na(.data$age) &
-                    .data$dispersal_status == "pre_dispersal")
+                  .data$dispersal_status == "pre_dispersal")
 
 test_data <- model_data$all |> 
   dplyr::filter(year > end_yr) |> 
   dplyr::filter(!is.na(.data$rank_category) & .data$sex == "male" & !is.na(.data$age) &
-                    .data$dispersal_status == "pre_dispersal") |> 
+                  .data$dispersal_status == "pre_dispersal") |> 
   rename(event = surv)
 ```
 
@@ -469,24 +433,24 @@ ggplot(data = plot_data)+
 train_data <- model_data$all |>
   dplyr::filter(year <= end_yr) |> 
   dplyr::filter(.data$sex == "male" & !is.na(.data$age) &
-                    .data$dispersal_status == "post_dispersal") %>%
-    dplyr::mutate(post_dispersal_status = as.factor(.data$post_dispersal_status)) %>%
-    #In this case, we need to exclude the month of dispersal (not clear how long they were pre-disperser or post-disperser here)
-    #Also exclude the month changing from natal to philo.
-    #We don't do this for females because they are still within the same model and status is not included as a model term
-    dplyr::filter(!(.data$status_start != .data$status_end & stringr::str_detect(.data$status_end,
-                                                                                 "selector|disperser|immigrant|transient|philopatric")))
+                  .data$dispersal_status == "post_dispersal") %>%
+  dplyr::mutate(post_dispersal_status = as.factor(.data$post_dispersal_status)) %>%
+  #In this case, we need to exclude the month of dispersal (not clear how long they were pre-disperser or post-disperser here)
+  #Also exclude the month changing from natal to philo.
+  #We don't do this for females because they are still within the same model and status is not included as a model term
+  dplyr::filter(!(.data$status_start != .data$status_end & stringr::str_detect(.data$status_end,
+                                                                               "selector|disperser|immigrant|transient|philopatric")))
 
 test_data <- model_data$all |> 
   dplyr::filter(year > end_yr) |> 
   dplyr::filter(.data$sex == "male" & !is.na(.data$age) &
-                    .data$dispersal_status == "post_dispersal") %>%
-    dplyr::mutate(post_dispersal_status = as.factor(.data$post_dispersal_status)) %>%
-    #In this case, we need to exclude the month of dispersal (not clear how long they were pre-disperser or post-disperser here)
-    #Also exclude the month changing from natal to philo.
-    #We don't do this for females because they are still within the same model and status is not included as a model term
-    dplyr::filter(!(.data$status_start != .data$status_end & stringr::str_detect(.data$status_end,
-                                                                                 "selector|disperser|immigrant|transient|philopatric"))) |> 
+                  .data$dispersal_status == "post_dispersal") %>%
+  dplyr::mutate(post_dispersal_status = as.factor(.data$post_dispersal_status)) %>%
+  #In this case, we need to exclude the month of dispersal (not clear how long they were pre-disperser or post-disperser here)
+  #Also exclude the month changing from natal to philo.
+  #We don't do this for females because they are still within the same model and status is not included as a model term
+  dplyr::filter(!(.data$status_start != .data$status_end & stringr::str_detect(.data$status_end,
+                                                                               "selector|disperser|immigrant|transient|philopatric"))) |> 
   rename(event = surv)
 ```
 
@@ -672,3 +636,104 @@ ggplot(data = plot_data)+
 ```
 
 Stick with logit with no exponent...
+
+# OLD CODE
+
+```{r}
+## Can add "cloglog" and "cauchit" to linkfn if you want, but this can struggle to converge
+compare_linkfn <- function(formula, ..., linkfn = c("logit", "probit")) {
+  
+  all_mods <- lapply(linkfn, FUN = \(link){
+    spaMM::fitme(formula, ..., family = binomial(link = link))
+  })
+  names(all_mods) <- linkfn
+  
+  AICs <- data.frame(linkfn = linkfn,
+                     AIC = sapply(all_mods, FUN = \(mod){
+                       AIC(mod, verbose = FALSE)[1]
+                     })) %>% 
+    dplyr::arrange(AIC)
+  
+  print(AICs)
+  return(all_mods)
+}
+```
+
+Carry out likelihood profiling with different exponent values
+
+```{r}
+exp_profiling <- function(exp, data, model, optimize = TRUE, metric = "logLik", test_data, ...){
+  
+  if (metric == "logLik"){
+    pb <- progress::progress_bar$new(total = length(exp))
+    manual_loglik_opt <- sapply(exp, FUN = exp_estimation, data = data, model = model, pb = pb, verbose = FALSE)
+    plot_data <- data.frame(exp = exp,
+                            loglik = manual_loglik_opt)
+    
+    ## Include this if model struggles to optimize
+    if (optimize) {
+      algo_loglik_optim <- optimize(exp_estimation, lower = min(exp), upper = max(exp), data = data, model = model, verbose = FALSE,
+                                    maximum = TRUE, ...) 
+    } else {
+      algo_loglik_optim <- list()
+      algo_loglik_optim$objective <- max(plot_data$loglik)
+      algo_loglik_optim$maximum <- plot_data$exp[plot_data$loglik == max(plot_data$loglik)]
+    }
+    
+    loglik_1    <- exp_estimation(x = 1, data = data, model = model, verbose = FALSE)
+    loglik_best <- exp_estimation(x = algo_loglik_optim$maximum, data = data, model = model, verbose = FALSE)
+    
+    pval <- pchisq(-2 * (loglik_1 - loglik_best), df = 1, lower.tail = FALSE)
+    
+    return(list(optim = algo_loglik_optim,
+                data = plot_data,
+                plot = ggplot(data = plot_data) +
+                  geom_hline(yintercept = algo_loglik_optim$objective - qchisq(p = 0.95, df = 1)/2,
+                             lty = 2) +
+                  geom_line(aes(x = exp, y = loglik)) +
+                  geom_point(aes(x = exp, y = loglik)) +
+                  geom_point(aes(x = algo_loglik_optim$maximum, y = loglik_best),
+                             size = 3, colour = "red") +
+                  scale_x_continuous(limits = c(min(exp), max(exp)),
+                                     breaks = seq(min(exp), max(exp), 1)) +
+                  labs(title = paste("P-value difference between exp=1 and best exponent", round(algo_loglik_optim$maximum, 2), ":\n", round(pval, digits = 2), sep = " ")) +
+                  theme_bw()))
+    
+  } else if(metric == "Brier"){
+    
+    pb <- progress::progress_bar$new(total = length(exp))
+    manual_Brier_opt <- sapply(exp, FUN = exp_estimation, data = data, model = model, pb = pb, verbose = FALSE, metric = "Brier", test_data = test_data)
+    plot_data <- data.frame(exp = exp,
+                            Brier = manual_Brier_opt)
+    
+    ## Include this if model struggles to optimize
+    if (optimize) {
+      algo_Brier_optim <- optimize(exp_estimation, lower = min(exp), upper = max(exp), data = data, model = model, verbose = FALSE,
+                                   metric = "Brier", test_data = test_data,
+                                   maximum = FALSE, ...) 
+    } else {
+      algo_Brier_optim <- list()
+      algo_Brier_optim$objective <- min(plot_data$Brier)
+      ## Because we round our Brier scores, we can get multiple matches
+      algo_Brier_optim$minimise <- plot_data$exp[plot_data$Brier == min(plot_data$Brier)]
+    }
+    
+    Brier_best <- exp_estimation(x = algo_Brier_optim$minimise, data = data, model = model, verbose = FALSE, metric = "Brier", test_data = test_data)
+    
+    return(list(optim = algo_Brier_optim, 
+                data = plot_data,
+                plot = ggplot(data = plot_data) +
+                  # geom_hline(yintercept = algo_loglik_optim$objective - qchisq(p = 0.95, df = 1)/2,
+                  #            lty = 2) +
+                  geom_line(aes(x = exp, y = Brier)) +
+                  geom_point(aes(x = exp, y = Brier)) +
+                  geom_point(aes(x = algo_Brier_optim$minimise, y = Brier_best),
+                             size = 3, colour = "red") +
+                  scale_x_continuous(limits = c(min(exp), max(exp)),
+                                     breaks = seq(min(exp), max(exp), 1)) +
+                  theme_bw()))
+    
+  }
+  
+}
+```
