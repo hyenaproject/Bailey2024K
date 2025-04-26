@@ -5,8 +5,6 @@ date: "2025-04-26"
 output: html_document
 ---
 
-## EXTRACT DEMOGRAPHIC DATA:
-
 ```{r}
 ## Prepare workspace
 library(hyenaR)
@@ -30,44 +28,98 @@ start_year  <- 1997 ## First year to estimate K
 end_year    <- 2023 ## Last year to estimate K
 ```
 
-## Absolute population size
+```{r}
+hyenaR::load_package_database.full(db.path)
+```
 
-We extract number of individuals, separated by sex and lifestage (i.e. adult v. non-adult). NOTE: This will be very slightly different if we just extracted all individuals because some are missed if their lifestage or sex is unknown. This is a small number and not relevant for plotting.
+## Extracting demographic information
 
-We extract data at monthly and yearly level. Currently, only annual data is used in plots to match the scale of our estimate of Kt.
+We have a challenge when estimating demographic data. For our analysis, it is most useful to consider an annual scale so that we can compare to estimates of Kt. However, if we just consider unique individuals in a year we risk overestimating the population size because not all those individuals will have been present at the same time. This issue is even worse at clan level!
 
-### Population level
+Instead, it is more appropriate to estimate demographic data at the scale of month (i.e. number of unique individuals). Within a month, changes in lifestage/clan occur less frequently so issues of double counting is minimised. If we want annual estimates, we can then consider the maximum monthly value observed within a year.
 
-Calculate number of individuals in the whole population (main clans). NOTE: This might not match exactly to the sum of all clan sizes within a time period because individuals may be double counted when moving between clans.
+### Maximum population size
+
+We estimate number of adults and total number of individuals in the population in each month. We then take the MAXIMUM monthly population size for comparison to Kt.
 
 ```{r}
-if (!file.exists(here::here("./data/Nplot_data_separate_year.RDS"))) {
+if (!file.exists(here::here("./data/Nplot_data_1month.RDS"))) {
   
-  hyenaR::load_package_database.full(db.path)
-  
-  ## We include all data with at least 1y observations afterwards. Exclude Jan/Feb 2022 just to make it easier to describe!
-  real_pop_separate <- dplyr::tibble(date = seq(as.Date("1996-01-01"), as.Date("2023-01-01"), by = "1 year")) %>%
+  real_pop <- dplyr::tibble(date = seq(as.Date("1996-05-01"), as.Date("2023-01-01"), by = "1 month")) %>%
     dplyr::mutate(from = date, to = lead(date)) |>
     dplyr::filter(!is.na(to))
+
+  real_pop <- real_pop |>
+    dplyr::mutate(pop_size = hyenaR::fetch_pop_number(main.clans = TRUE, from = .data$from, to = .data$to,
+                                                      CPUcores = cores_used, .parallel.min = 285),
+                  adult_pop_size = hyenaR::fetch_pop_number(main.clans = TRUE, from = .data$from, to = .data$to, lifestage = "adult",
+                                                            CPUcores = cores_used, .parallel.min = 285))
   
-  ## Only start half way in 1996 (we don't monitor the whole year)
-  real_pop_separate$date[1] <- as.Date("1996-05-01")
+  saveRDS(real_pop, here::here("./data/Nplot_data_1month.RDS"))
   
-  real_pop_separate <- real_pop_separate |> 
-    dplyr::mutate(young = hyenaR::fetch_pop_number(main.clans = TRUE, from = .data$from, to = .data$to,
-                                                   CPUcores = cores_used, .parallel.min = 50,
-                                                   lifestage = "!adult"),
-                  ad_male = hyenaR::fetch_pop_number(main.clans = TRUE, from = .data$from, to = .data$to,
-                                                     CPUcores = cores_used, .parallel.min = 50,
-                                                     lifestage = "adult", sex = "male"),
-                  ad_fem = hyenaR::fetch_pop_number(main.clans = TRUE, from = .data$from, to = .data$to,
-                                                    CPUcores = cores_used, .parallel.min = 50,
-                                                    lifestage = "adult", sex = "female")
-    )
-  
-  saveRDS(real_pop_separate, file = here::here("./data/Nplot_data_separate_year.RDS"))
 }
 ```
+
+```{r}
+if (!file.exists(here::here("./data/Nplot_data_year.RDS"))) {
+  
+  ## Monthly data
+  pop_size_month <- readRDS(here::here("./data/Nplot_data_1month.RDS"))
+  
+  ## Find max pop
+  pop_size_year <- pop_size_month |>
+    dplyr::mutate(year = lubridate::year(date)) |> 
+    dplyr::group_by(year) |> 
+    summarise(from = min(from), to = max(to),
+              max_pop_size = max(pop_size),
+              max_adult_pop_size = max(adult_pop_size), .groups = "drop")
+  
+  saveRDS(pop_size_year, here::here("./data/Nplot_data_year.RDS"))
+  
+}
+```
+
+### Maximum clan size
+
+We also want to extract clan size data; however, we are faced with major issue of double counting due to dispersal. Instead, we calculate data within each month and then take the MAXIMUM clan size for each clan within a year. This also involves double counting, but it is more informative of the actual realised size that clans can reach.
+
+```{r}
+if (!file.exists(here::here("./data/NClanplot_data_1month.RDS"))) {
+  
+  ## We include all data with at least 1y observations afterwards. Exclude Jan/Feb 2022 just to make it easier to describe!
+  real_clan_separate <- dplyr::tibble(date = seq(as.Date("1996-05-01"), as.Date("2023-01-01"), by = "1 month")) %>%
+    dplyr::mutate(clan = list(hyenaR::find_clan_name.all())) |>
+    tidyr::unnest(cols = clan) |>
+    dplyr::mutate(pop_size = hyenaR::fetch_pop_number(main.clans = TRUE, from = .data$date, to = lead(.data$date),
+                                                      CPUcores = cores_used, .parallel.min = 285),
+                  adult_pop_size = hyenaR::fetch_pop_number(main.clans = TRUE, from = .data$date, to = lead(.data$date),
+                                                            lifestage = "adult",
+                                                            CPUcores = cores_used, .parallel.min = 285))
+
+  saveRDS(real_clan_separate, file = here::here("./data/NClanplot_data_1month.RDS"))
+
+}
+```
+
+```{r}
+if (!file.exists(here::here("./data/NClanplot_data_year.RDS"))) {
+
+  clan_size_month <- readRDS(here::here("./data/NClanplot_data_1month.RDS"))
+  
+  clan_size_year <- clan_size_month |>
+    dplyr::mutate(year = lubridate::year(date)) |> 
+    dplyr::group_by(clan, year) |> 
+    summarise(max_pop_size = max(pop_size),
+              max_adult_pop_size = max(adult_pop_size), .groups = "drop")
+
+  saveRDS(clan_size_year, file = here::here("./data/NClanplot_data_year.RDS"))
+
+}
+```
+
+### Age and (adult) sex ratio
+
+Calculate number of individuals in each of three groups: adult female, adult male, juvenile. This is for supplementary data and doesn't need to be aggregated up to annual value. We calculate at month scale (rather than on a single date) to be consistent with our above steps.
 
 ```{r}
 ## Calculate monthly output (if not already saved)
@@ -92,115 +144,3 @@ if (!file.exists(here::here("./data/Nplot_data_separate_1month.RDS"))) {
   saveRDS(real_pop_separate, file = here::here("./data/Nplot_data_separate_1month.RDS"))
 }
 ```
-
-### Clan level
-
-Do the same thing, but for each of the main clans individually. NOTE: This might not match exactly to the total population size calculated above due to double counting during dispersal.
-
-```{r}
-if (!file.exists(here::here("./data/NClanplot_data_separate_year.RDS"))) {
-  
-  hyenaR::load_package_database.full(db.path)
-  
-  ## We include all data with at least 1y observations afterwards. Exclude Jan/Feb 2022 just to make it easier to describe!
-  real_clan_separate <- dplyr::tibble(date = seq(as.Date("1996-01-01"), as.Date("2023-01-01"), by = "1 year")) %>%
-    dplyr::mutate(from = date, to = lead(date)) |>
-    dplyr::filter(!is.na(to))
-  
-  ## Only start half way in 1996 (we don't monitor the whole year)
-  real_clan_separate$date[1] <- as.Date("1996-05-01")
-  
-  real_clan_separate <- real_clan_separate |> 
-    dplyr::mutate(clan = list(hyenaR::find_clan_name.all())) |>
-    tidyr::unnest(cols = clan) |>
-    dplyr::mutate(young = hyenaR::fetch_clan_number(clan = clan, from = .data$from, to = .data$to,
-                                                    CPUcores = cores_used, .parallel.min = 50,
-                                                    lifestage = "!adult"),
-                  ad_male = hyenaR::fetch_clan_number(clan = clan, from = .data$from, to = .data$to,
-                                                      CPUcores = cores_used, .parallel.min = 50,
-                                                      lifestage = "adult", sex = "male"),
-                  ad_fem = hyenaR::fetch_clan_number(clan = clan, from = .data$from, to = .data$to,
-                                                     CPUcores = cores_used, .parallel.min = 50,
-                                                     lifestage = "adult", sex = "female")
-    )
-  
-  saveRDS(real_clan_separate, file = here::here("./data/NClanplot_data_separate_year.RDS"))
-}
-```
-
-```{r}
-if (!file.exists(here::here("./data/NClanplot_data_separate_1month.RDS"))) {
-  
-  hyenaR::load_package_database.full(db.path)
-
-  ## We include all data with at least 1y observations afterwards. Exclude Jan/Feb 2022 just to make it easier to describe!
-  real_clan_separate <- dplyr::tibble(date = seq(as.Date("1996-05-01"), as.Date("2023-01-01"), by = "1 month")) %>%
-    dplyr::mutate(clan = list(hyenaR::find_clan_name.all())) |>
-    tidyr::unnest(cols = clan) |>
-    dplyr::mutate(young = hyenaR::fetch_clan_number(clan = clan, from = .data$date, to = lead(.data$date),
-                                                   CPUcores = cores_used, .parallel.min = 50,
-                                                   lifestage = "!adult"),
-                  ad_male = hyenaR::fetch_clan_number(clan = clan, from = .data$date, to = lead(.data$date),
-                                                     CPUcores = cores_used, .parallel.min = 50,
-                                                     lifestage = "adult", sex = "male"),
-                  ad_fem = hyenaR::fetch_clan_number(clan = clan, from = .data$date, to = lead(.data$date),
-                                                    CPUcores = cores_used, .parallel.min = 50,
-                                                    lifestage = "adult", sex = "female")
-    )
-
-  saveRDS(real_clan_separate, file = here::here("./data/NClanplot_data_separate_1month.RDS"))
-}
-```
-
-## Compare data to understand difference in calculation methods
-
-Calculate absolute population size for comparison (no distinction for lifestage/sex).
-
-```{r}
-if (!file.exists(here::here("./data/Nplot_data_year.RDS"))) {
-  
-  hyenaR::load_package_database.full(db.path)
-
-  real_pop <- dplyr::tibble(date = seq(as.Date("1996-01-01"), as.Date("2023-01-01"), by = "1 year")) %>%
-    dplyr::mutate(from = date, to = lead(date)) |>
-    dplyr::filter(!is.na(to))
-
-  ## In first year, just consider the
-  real_pop$from[1] <- "1996-05-01"
-
-  real_pop <- real_pop |>
-    dplyr::mutate(pop_size = hyenaR::fetch_pop_number(main.clans = TRUE, from = .data$from, to = .data$to,
-                                                      CPUcores = cores_used, .parallel.min = 285),
-                  adult_pop_size = hyenaR::fetch_pop_number(main.clans = TRUE, from = .data$from, to = .data$to, lifestage = "adult",
-                                                            CPUcores = cores_used, .parallel.min = 285))
-  
-  saveRDS(real_pop, here::here("./data/Nplot_data_year.RDS"))
-  
-}
-```
-
-```{r}
-whole_pop_combined <- readRDS(here::here("./data/Nplot_data_year.RDS"))
-whole_pop_separate <- readRDS(here::here("./data/Nplot_data_separate_year.RDS")) |> 
-  mutate(pop_sum = lay::lay(pick(young:ad_fem), sum))
-clan_pop_separate  <- readRDS(here::here("./data/NClanplot_data_separate_year.RDS")) |> 
-  mutate(pop_sum = lay::lay(pick(young:ad_fem), sum)) |> 
-  group_by(date) |> 
-  summarise(pop_sum_clan = sum(pop_sum))
-```
-
-```{r}
-plot_data <- whole_pop_combined |> 
-  dplyr::select(from, allindv = pop_size) |> 
-  dplyr::left_join(whole_pop_separate |> 
-                     select(from = date, knownsex = pop_sum)) |> 
-  dplyr::left_join(clan_pop_separate |> 
-                     select(from = date, perclan = pop_sum_clan)) |> 
-  tidyr::pivot_longer(cols = allindv:perclan)
-
-ggplot() +
-  geom_point(data = plot_data,
-             aes(x = from, y = value, colour = name))
-```
-
-
