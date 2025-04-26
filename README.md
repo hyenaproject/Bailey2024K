@@ -1,10 +1,13 @@
 # Effects of environmental change on population growth: monitoring time-varying carrying capacity in free-ranging spotted hyenas
 
-This repository includes code and plots for associated with the paper Bailey et al. 2024 currently in pre-print (DOI XXX). This code relies on two separate repositories: [SHIM](https://github.com/hyenaproject/SHIM) and [hyenaR](https://github.com/hyenaproject/hyenaR) for working with data from the Ngorongoro Hyena Project. These packages can be installed from source (see SETUP below).
+This repository includes code and plots associated with the paper 'Effects of environmental change on population growth' (available in pre-print https://doi.org/10.1101/2024.04.11.589105).
+This code relies on two separate repositories: [SHIM](https://github.com/hyenaproject/SHIM) and [hyenaR](https://github.com/hyenaproject/hyenaR) for working with data from the Ngorongoro Hyena Project.
+These packages can be installed from source (see SETUP below).
 
 ## SETUP
 
-Install the R packages `SHIM` and `hyenaR` from source using available `tar.gz` files provided in this repository. To install these packages from source, use the following code in R:
+Install the R packages `SHIM` and `hyenaR` from source using available `tar.gz` files provided in this repository.
+To install these packages from source, use the following code in R:
 
 ```
 ## Install SHIM
@@ -18,21 +21,24 @@ Once SHIM and hyenaR are installed, the analysis for the paper can be recreated.
 
 ## STEP0_prepare_data (optional)
 
-Generate all data needed for analysis. This step is optional as its code requires access to the Ngorongoro Hyena Project database, which is not publicly available. The final output of all these data extraction tasks is available on Zenodo (https://zenodo.org/doi/10.5281/zenodo.10955614). To skip this step 0 and directly proceed to step 1, the data hosted on Zenodo should be downloaded and placed into a folder `data` at the root of this repository.
+Generate all data needed for analysis. This step is optional as its code requires access to the Ngorongoro Hyena Project database, which is not publicly available.
+The final output of all these data extraction tasks is available on Zenodo (https://zenodo.org/doi/10.5281/zenodo.10955614).
+To skip this step 0 and directly proceed to step 1, the data hosted on Zenodo should be downloaded and placed into a folder `data` at the root of this repository.
 
 The folder `STEP0_prepare_data` includes:
 
-- `starting_population.R` 
-    - Generate a snapshot of spotted hyena population at time 0. Output saved as `data/starting_data.RDS`.
-A `.RDS` file is needed (rather than e.g. `.csv`) because we use nested (list) columns for selections.
-- `model_fit.Rmd` 
-    - Extract data used to fit all models. Output saved as `data/model_data.RDS`. Test model fitting with different link functions and exponents.
-- `mechanistic_data.Rmd`
-    - Extract environmental data required by later steps to run mechanistic models, including data on lions, prey abundance, and disease. Output saved as `data/mechanistic_model_data.csv`.
-- `lambdaN_data.Rmd`
-    - Extract data on lambda population size, required by later steps to estimate K using traditional Ricker and Beverton Holt models. Output saved as `data/supp_data1_alternativeK_data.csv`.
-- `demographic_data.R`
-    - Extract demographic data, number of juveniles, adult males, and adult females, and total population over time. Outputs are saved as `data/Nplot_data_separate_1month.RDS` (counts separated by age and sex at monthly resolution), `data/Nplot_data_separate_year.RDS` (counts separated by age and sex at yearly resolution), `data/Nplot_data_month.RDS` (total population count at monthly resolution), `data/Nplot_data_year.RDS` (total population count at yearly resolution).
+- `01_fit_VR_models.Rmd` 
+    - Extract data used to fit all vital rate models. Output saved as `data/model_data.RDS`. Test model predictive accuracy with different link functions and exponents.
+- `02_demographic_data.Rmd`
+    - Extract demographic data, number of juveniles, adult males, and adult females, and total population over time.
+- `03_starting_population.Rmd` 
+    - Generate a snapshot of spotted hyena population at time 0. Output saved as `data/starting_data.RDS`. A `.RDS` file is needed (rather than e.g. `.csv`) because we use nested (list) columns for selections.
+- `04_lambdaN_data.Rmd`
+    - Extract data on lambda population size, required in later steps to estimate K using traditional Ricker and Beverton Holt models.
+    Output saved as `data/supp_data1_alternativeK_data.csv`.
+- `05_mechanistic_data.Rmd`
+    - Extract environmental data required by later steps to run mechanistic models, including data on lions, prey abundance, and disease.
+    Output saved as `data/mechanistic_model_data.csv`.
 
 These data are used throughout further analyses.
 

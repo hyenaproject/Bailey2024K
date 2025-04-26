@@ -26,9 +26,9 @@ library(SHIM)
 Define which simulation type we're using
 
 ```{r}
-db.path     <- here("../hyena_data/Fisidata_20_04_2024.sqlite")
+db.path     <- here::here("./hyena_data/Fisidata_2025_04_18.sqlite")
 start_year  <- 1997
-end_year    <- 2022
+end_year    <- 2023
 ```
 
 Load database
@@ -36,7 +36,6 @@ Load database
 ```{r}
 load_package_database.full(db.path)
 ```
-
 
 ## Analysis for whole population
 
@@ -208,5 +207,4 @@ final_output <- mod_data_alldisease_consv |>
 
 readr::write_excel_csv(final_output,
                        here("./data/mechanistic_model_data.csv"))
-
 ```

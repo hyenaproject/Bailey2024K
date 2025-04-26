@@ -19,7 +19,7 @@ Define important variables:
 - Time step (we use 6 months. 1 month has very high temporal auto-correlation)
 
 ```{r}
-db.path     <- "~/data/hyena_data/Fisidata_20_04_2024.sqlite"
+db.path     <- here::here("./hyena_data/Fisidata_2025_04_18.sqlite")
 recruit_age <- 6
 time_step   <- 6
 ```
