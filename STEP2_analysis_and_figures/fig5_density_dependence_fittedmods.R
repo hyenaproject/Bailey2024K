@@ -99,6 +99,9 @@ all_pdep <-  rbind(cbind(Model = "a) Female survival", allF_pdep),
 
 all_pdep$Model <- forcats::fct_inorder(all_pdep$Model)
 
+## Read in model data (to show real points)
+model_data <- readRDS(here::here("./data/model_data.RDS"))
+
 ## FULL PLOT
 ##
 ggplot(all_pdep) +
@@ -128,8 +131,8 @@ repro_ymin <- -0.005
 twin_ymax <- 0.8
 twin_ymin <- 0
 
-xmax <- 125
-xmin <- 20
+xmax <- 145
+xmin <- 5
 
 plot_data <- all_pdep |>
   filter(rank_category2 != "middle" & !(Model == "c) Male survival\n(adult)" & rank_category2 == "top")) |>
@@ -139,7 +142,23 @@ plot_data <- all_pdep |>
 surv_data <- plot_data |>
   filter(grepl(pattern = "survival", x = Model))
 
+surv_data_realF <- model_data$F_surv_data |>
+  filter(rank_category2 %in% c("top", "bottom") & clan_size > 10) |>
+  mutate(clan_size_5 = (clan_size %/% 10)*10 + 5) |>
+  group_by(rank_category2, clan_size_5) |>
+  summarise(binom::binom.wilson(sum(surv), n()),
+            avg_age = mean(age),
+            nr_prime = sum(age >= 60 & age <= 70)) |>
+  mutate(Model = "a) Female survival")
+
 surv_panel <- ggplot() +
+  geom_errorbar(data = surv_data_realF,
+                aes(x = clan_size_5, ymin = lower, ymax = upper,
+                    col = rank_category2),
+                width = 0) +
+  geom_point(data = surv_data_realF,
+             aes(x = clan_size_5, y = mean,
+                 col = rank_category2)) +
   geom_ribbon(data = surv_data,
               aes(y = pointp , x = focal_var, col = rank_category2,
                   ymin = low, ymax = up), alpha = 0.3, linetype = "dotted", fill = NA, linewidth = 0.5) +
