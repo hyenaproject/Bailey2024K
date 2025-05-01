@@ -5,7 +5,7 @@
 ### WE CAN FORMALIZE THIS
 
 #PREPARE PACKAGES AND LOAD DATA ####
-options(future.rng.onMisuse="ignore", scipen = 200)
+options(future.rng.onMisuse = "ignore", scipen = 200)
 
 ## Currently allows for more flexible rank fn (e.g. identify natals to take just natal rank)
 # remotes::install_github(repo = "hyenaproject/SHIM", force = TRUE, ref = "v0.5.21")
@@ -31,24 +31,24 @@ start_pop <- readRDS(here::here("./data/starting_data.RDS"))
 
 #Run 10 iterations for each year with same starting values
 system.time({db_20_04_2024_K <- simulation_iterate(start_pops = start_pop,
-                                          return = FALSE,
-                                          sim_years = 1997, i = 2,
-                                          predictors = list(start_clan = \(ID) ID$clan_name,
-                                                            post_dispersal_status = \(ID) if (ID$birth_date == ID$first_date) "philo" else "disp",
-                                                            ## If we want a more refined estimate of rank
-                                                            rank_category2 = \(ID){
-                                                              natals <- ID$clan_ID$inhabitants_tbl$ID[ID$clan_ID$inhabitants_tbl$natal]
-                                                              ## Will extract for all individuals (even disperser males) so can be NA
-                                                              if (!ID$ID %in% natals) return(NA_character_)
-                                                              std_rank <- seq(1, -1, length.out = length(natals))[which(natals == ID$ID)]
-                                                              if (std_rank >= 1/3) "top" else if (std_rank <= -1/3) "bottom" else "middle"}
-                                          ),
-                                          number_steps = 2400,
-                                          step_size = 1, models = modlist,
-                                          save_dir = "./STEP1_estimate_K",
-                                          save_size = 60,
-                                          iterator_seed = 123,
-                                          parallel = TRUE, CPUcores = 5, .parallel.min = 1)})
+                                                   return = FALSE,
+                                                   sim_years = start_yr:end_yr, i = 10,
+                                                   predictors = list(start_clan = \(ID) ID$clan_name,
+                                                                     post_dispersal_status = \(ID) if (ID$birth_date == ID$first_date) "philo" else "disp",
+                                                                     ## If we want a more refined estimate of rank
+                                                                     rank_category2 = \(ID){
+                                                                       natals <- ID$clan_ID$inhabitants_tbl$ID[ID$clan_ID$inhabitants_tbl$natal]
+                                                                       ## Will extract for all individuals (even disperser males) so can be NA
+                                                                       if (!ID$ID %in% natals) return(NA_character_)
+                                                                       std_rank <- seq(1, -1, length.out = length(natals))[which(natals == ID$ID)]
+                                                                       if (std_rank >= 1/3) "top" else if (std_rank <= -1/3) "bottom" else "middle"}
+                                                   ),
+                                                   number_steps = 1200,
+                                                   step_size = 1, models = modlist,
+                                                   save_dir = "./STEP1_estimate_K",
+                                                   save_size = 60,
+                                                   iterator_seed = 123,
+                                                   parallel = TRUE, CPUcores = 48, .parallel.min = 1)})
 
 ### MARGINAL EFFECTS
 ###
