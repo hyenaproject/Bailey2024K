@@ -803,6 +803,17 @@ F_repro_nonprimi_mod_logit <- spaMM::fitme(repro ~ atan(months)*rank_category2 +
                                            method = "PQL/L", family = binomial(link = "logit"))
 ```
 
+Compare our different atan models
+
+```{r}
+mods_Fnonprimi <- list(null_mod, F_repro_nonprimi_mod_logit)
+mods_accuracy_Fnonprimi <- purrr::map2_dfr(.x = mods_Fnonprimi, .y = c("null", "atan"),
+                                        .f = est_accuracy,
+                                              test_data = test_data_Fnonprimi)
+mods_accuracy_Fnonprimi |> 
+  arrange(Brier)
+```
+
 Fit different exponents and compare to null model
 
 ```{r}
@@ -889,6 +900,18 @@ plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all
 ggplot(data = plot_data) +
   geom_line(aes(x = clan_size, y = value, colour = rank_category2)) +
   facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
+```
+
+```{r}
+plot_data <- expand.grid(start_clan = "A", clan_size = 100, after1y_effort_all = 1, age = 72,
+                         rank_category2 = c("top", "middle", "bottom"), months = 0:20) %>% 
+  mutate(`Predict (Brier)` = as.numeric(predict(best_Brier, newdata = ., type = "response", re.form = NA)),
+         `Predict (probit)` = as.numeric(predict(best_probit, newdata = ., type = "response", re.form = NA))) %>% 
+  tidyr::pivot_longer(starts_with("Pred"))
+
+ggplot(data = plot_data) +
+  geom_line(aes(x = months, y = value, colour = rank_category2)) +
+  facet_wrap(facets = ~name, nrow = 1)
 ```
 
 ### Twinning
