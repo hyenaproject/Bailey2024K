@@ -171,10 +171,10 @@ custom_atan <- function(x, x0 = 0, a = 1, b = 0){
 }
 
 plot_data <- data.frame(x = seq(0, 25, 0.01)) |> 
-  mutate(normal_atan = atan(x),
-         shift_horizontal = atan(x, x0 = 6),
-         steeper = atan(x, a = 2),
-         shift_vertical = atan(x, b = 2)
+  mutate(normal_atan = custom_atan(x),
+         shift_horizontal = custom_atan(x, x0 = 6),
+         steeper = custom_atan(x, a = 2),
+         shift_vertical = custom_atan(x, b = 2)
          ) |> 
   tidyr::pivot_longer(cols = normal_atan:shift_vertical)
 
