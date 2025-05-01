@@ -80,7 +80,7 @@ for (file in all_tbls){
 }
 
 build_package_database.full(db.name = "POM_sim",
-                            input.folder = here::here("./data/POM/"))
+                            input.folder = here::here("./data/POM/"), overwrite.db = "yes")
 ```
 
 ```{r}
@@ -263,7 +263,7 @@ ggplot() +
   theme_classic() +
   theme(axis.text = element_text(colour = "black"))
 
-ggsave(filename = here::here("./STEP0_prepare_data/03_pattern_oriented_modelling/plots/lifespan.png"),
+ggsave(filename = here::here("./plots/POM/lifespan.png"),
        width = 9, heigh = 5)
 ```
 
