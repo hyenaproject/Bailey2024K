@@ -889,7 +889,6 @@ polynome_accuracy_twin <- purrr::map2_dfr(.x = polynome_mods_twin, .y = c("null"
 polynome_accuracy_twin |> 
   arrange(Brier)
 ```
-.2053760
 Model with age and density dependence actually has no difference to predictive accuracy (either w/ log loss or Brier score).
 
 Fit different exponents and compare to null model
@@ -982,37 +981,143 @@ ggplot(data = plot_data) +
   facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
 ```
 
+### Male dispersal
+
+```{r}
+set.seed(10)
+whole_data_disp <- model_data$M_second_disp_data |> 
+  ## Filter out not full years
+  dplyr::filter(year <= end_yr) |> 
+  dplyr::select(second_disp, age, is_philo, start_clan)
+
+test_sample <- sample(1:nrow(whole_data_disp), size = as.integer(nrow(whole_data_disp)*0.05), replace = FALSE)
+
+train_data_disp <- whole_data_disp[-test_sample, ]
+test_data_disp  <- whole_data_disp[test_sample, ] |> 
+  rename(event = second_disp)
+```
+
+```{r}
+null_mod <- spaMM::fitme(second_disp ~ 1,
+                         data = train_data_disp,
+                         method = "PQL/L", family = binomial(link = "logit"))
+
+disp_mod_logit_poly1 <- spaMM::fitme(second_disp ~ age + is_philo + start_clan,
+                               data = train_data_disp,
+                               method = "PQL/L", family = binomial(link = "logit"))
+
+disp_mod_logit_poly2 <- spaMM::fitme(second_disp ~ poly(age, 2) + is_philo + start_clan,
+                               data = train_data_disp,
+                               method = "PQL/L", family = binomial(link = "logit"))
+```
+
+Compare different models and null model based on predictive accuracy.
+
+```{r}
+polynome_mods_disp <- list(null_mod, disp_mod_logit_poly1, disp_mod_logit_poly2)
+polynome_accuracy_disp <- purrr::map2_dfr(.x = polynome_mods_disp, .y = c("null", "poly1", "poly2"), .f = est_accuracy,
+                                          test_data = test_data_disp)
+polynome_accuracy_disp |> 
+  arrange(Brier)
+```
+Null model (intercept only) seems best. Try also with probit fit.
+
+```{r}
+null_mod_probit <- update(null_mod, family = binomial(link = "probit"))
+
+disp_mod_probit_poly1 <- update(disp_mod_logit_poly1, family = binomial(link = "probit"))
+
+disp_mod_probit_poly2 <- update(disp_mod_logit_poly2, family = binomial(link = "probit"))
+```
+
+Compare different models and null model based on predictive accuracy.
+
+```{r}
+polynome_mods_disp_probit <- list(null_mod_probit, disp_mod_probit_poly1, disp_mod_probit_poly2)
+polynome_accuracy_disp_probit <- purrr::map2_dfr(.x = polynome_mods_disp, .y = c("null", "poly1", "poly2"), .f = est_accuracy,
+                                          test_data = test_data_disp)
+polynome_accuracy_disp_probit |> 
+  arrange(Brier)
+```
+
+Same outcome with probit.
+
+```{r}
+output_table <- polynome_accuracy_disp |> 
+  mutate(link = "logit",
+         exponent = c(NA, 1, 2)) |> 
+  bind_rows(polynome_accuracy_disp_probit |> 
+              mutate(link = "probit",
+         exponent = c(NA, 1, 2))) |> 
+  ## Arrange nicely
+  select(link, exponent, Brier, logLoss, logLik) |> 
+  dplyr::arrange(Brier)
+output_table
+```
+
+Probit model with 0.8 exponent is best.
+
+```{r}
+##Save output to include in supp material
+write.csv(output_table |> 
+            mutate(across(logLik:Brier, \(x) round(x, 4)),
+                   n = 1:n()) |> 
+            ## Only include top 10
+            ## Always include null model as well
+            filter(n <= 10 | is.na(exponent)) |> 
+            select(-n),
+          here::here("./data/model_accuracy/disp.csv"), row.names = FALSE)
+```
+
+#### Plot
+
+Probit model predicts slightly stronger DD effects.
+
+```{r}
+plot_data <- expand.grid(start_clan = "A", is_philo = c(TRUE, FALSE), age = 36:240) %>% 
+  mutate(`Predict (poly1)` = as.numeric(predict(disp_mod_logit_poly1, newdata = ., type = "response", re.form = NA)),
+         `Predict (null)` = as.numeric(predict(null_mod, newdata = ., type = "response", re.form = NA))) %>% 
+  tidyr::pivot_longer(starts_with("Pred"))
+
+ggplot(data = plot_data) +
+  geom_line(aes(x = age, y = value, colour = is_philo)) +
+  facet_wrap(facets = ~name, nrow = 1)
+```
+
 ## Save best models
 
 ```{r}
 top_models <- list(
   # F survival: logit, exponent 1, age polynome 2
-  Fsurv = fit_exp(x = best_fit_Fsurv$data$exponent[best_fit_Fsurv$data$Brier == min(best_fit_Fsurv$data$Brier)],
+  allF = fit_exp(x = best_fit_Fsurv$data$exponent[best_fit_Fsurv$data$Brier == min(best_fit_Fsurv$data$Brier)],
                        model = F_surv_mod_logit_poly2,
                        train_data = train_data_Fsurv, verbose = FALSE),
   # M pre-dispersal: probit, exponent 1, age polynome 2
-  PreMsurv = fit_exp(x = probit_fit_PreMsurv$data$exponent[probit_fit_PreMsurv$data$Brier == min(probit_fit_PreMsurv$data$Brier)],
+  predispM = fit_exp(x = probit_fit_PreMsurv$data$exponent[probit_fit_PreMsurv$data$Brier == min(probit_fit_PreMsurv$data$Brier)],
                        model = probit_mod_PreMsurv,
                        train_data = train_data_PreMsurv, verbose = FALSE),
   # M post-dispersal: logit, exponent 1.4, age polynome 2
-  PostMsurv = fit_exp(x = best_fit_PostMsurv$data$exponent[best_fit_PostMsurv$data$Brier == min(best_fit_PostMsurv$data$Brier)],
+  postdispM = fit_exp(x = best_fit_PostMsurv$data$exponent[best_fit_PostMsurv$data$Brier == min(best_fit_PostMsurv$data$Brier)],
                        model = PostM_surv_mod_logit_poly2,
                        train_data = train_data_PostMsurv, verbose = FALSE),
   # F primi repro: Probit, exponent 1 (atan fn for month)
-  Fprimi = fit_exp(x = probit_fit_Fprimi$data$exponent[probit_fit_Fprimi$data$Brier == min(probit_fit_Fprimi$data$Brier)],
+  primirepro = fit_exp(x = probit_fit_Fprimi$data$exponent[probit_fit_Fprimi$data$Brier == min(probit_fit_Fprimi$data$Brier)],
                        model = probit_mod_Fprimi,
                        train_data = train_data_Fprimi, verbose = FALSE),
   # F non-primi repro: Logit, exponent 1 (atan fn for month)
-  Fnonprimi = fit_exp(x = best_fit_Fnonprimi$data$exponent[best_fit_Fnonprimi$data$Brier == min(best_fit_Fnonprimi$data$Brier)],
+  nonprimirepro = fit_exp(x = best_fit_Fnonprimi$data$exponent[best_fit_Fnonprimi$data$Brier == min(best_fit_Fnonprimi$data$Brier)],
                        model = F_repro_nonprimi_mod_logit,
                        train_data = train_data_Fnonprimi, verbose = FALSE),
   # Twin: probit, exponent 0.8
   twin = fit_exp(x = probit_fit_twin$data$exponent[probit_fit_twin$data$Brier == min(probit_fit_twin$data$Brier)],
                        model = probit_mod_twin,
-                       train_data = train_data_twin, verbose = FALSE)
+                       train_data = train_data_twin, verbose = FALSE),
+  disp = spaMM::fitme(second_disp ~ 1,
+                         data = train_data_disp,
+                         method = "PQL/L", family = binomial(link = "logit"))
   )
 
-saveRDS(top_models, here::here("./data/best_models.RDS"))
+saveRDS(top_models, here::here("./data/model_list.RDS"))
 ```
 
 
