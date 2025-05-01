@@ -16,22 +16,10 @@ library(spaMM)
 library(here)
 
 start_yr <- 1997
-end_yr <- 2022
+end_yr <- 2023
 
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
-model_data <- readRDS(here::here("./data/model_data.RDS"))
-
-## GENERATED IN STEP1_estimate_K/estimateK.R
 modlist <- readRDS(here::here("./data/model_list.RDS"))
-
-## Update all models here to avoid env issues
-modlist$allF <- update(modlist$allF, data = model_data$F_surv_data)
-modlist$postdispM <- update(modlist$postdispM, data = model_data$PostM_surv_data)
-modlist$predispM <- update(modlist$predispM, data = model_data$PreM_surv_data)
-modlist$twin <- update(modlist$twin, data = model_data$F_twin_data)
-modlist$disp <- update(modlist$disp, data = model_data$M_second_disp_data)
-modlist$primirepro <- update(modlist$primirepro, data = model_data$F_repro_primi)
-modlist$nonprimirepro <- update(modlist$nonprimirepro, data = model_data$F_repro_nonprimi)
 
 ## Choose individuals born in 2010
 ## Cohort of individuals with lots of information
