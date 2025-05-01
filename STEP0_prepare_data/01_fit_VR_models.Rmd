@@ -157,6 +157,33 @@ exp_profiling <- function(exp, model, train_data, test_data){
 }
 ```
 
+### Custom atan fn
+
+Adjust arctan function that can be used to scale month effects for reproduction. **NOTE:** This is currently not used in the script, but could be valuable to fit more bespoke reproduction functions to model IBI and age at first reproduction (which appear to be too occurring to rapidly in our simulation).
+
+```{r}
+## x: Variable to transform
+## x0: Shift horizontal (so that INCREASE in repro starts at a later stage)
+## a: Steepness of effect
+## b: Shift vertical (so that absolute repro chance is higher)
+custom_atan <- function(x, x0 = 0, a = 1, b = 0){
+    atan(a*(x - x0)) + b
+}
+
+plot_data <- data.frame(x = seq(0, 25, 0.01)) |> 
+  mutate(normal_atan = atan(x),
+         shift_horizontal = atan(x, x0 = 6),
+         steeper = atan(x, a = 2),
+         shift_vertical = atan(x, b = 2)
+         ) |> 
+  tidyr::pivot_longer(cols = normal_atan:shift_vertical)
+
+ggplot() +
+  geom_line(data = plot_data,
+            aes(x = x, y = value, colour = name))
+```
+
+
 ## Fit models
 
 ### Female survival
