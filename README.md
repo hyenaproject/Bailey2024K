@@ -28,15 +28,20 @@ To skip this step 0 and directly proceed to step 1, the data hosted on Zenodo sh
 The folder `STEP0_prepare_data` includes:
 
 - `01_fit_VR_models.Rmd` 
-    - Extract data used to fit all vital rate models. Output saved as `data/model_data.RDS`. Test model predictive accuracy with different link functions and exponents.
-- `02_demographic_data.Rmd`
-    - Extract demographic data, number of juveniles, adult males, and adult females, and total population over time.
-- `03_starting_population.Rmd` 
+    - Extract data and fit VR models (comparing predictive accuracy).
+    Output saved as `data/model_list.RDS`.
+- `02_starting_population.Rmd` 
     - Generate a snapshot of spotted hyena population at time 0. Output saved as `data/starting_data.RDS`. A `.RDS` file is needed (rather than e.g. `.csv`) because we use nested (list) columns for selections.
-- `04_lambdaN_data.Rmd`
+- `03_pattern_oriented_modelling.Rmd`
+    - Use models generated in step 01. Run a single simulation covering an identical period to the real observed data.
+    Compare emergent properties to understand how well our simulation is able to recreate the Ngorongoro Crater population.
+    Outputs save in folder `data/POM` and `plots/POM`
+- `04_demographic_data.Rmd`
+    - Extract demographic data, number of juveniles, adult males, and adult females, and total population over time.
+- `05_lambdaN_data.Rmd`
     - Extract data on lambda population size, required in later steps to estimate K using traditional Ricker and Beverton Holt models.
     Output saved as `data/supp_data1_alternativeK_data.csv`.
-- `05_mechanistic_data.Rmd`
+- `06_mechanistic_data.Rmd`
     - Extract environmental data required by later steps to run mechanistic models, including data on lions, prey abundance, and disease.
     Output saved as `data/mechanistic_model_data.csv`.
 
@@ -44,13 +49,16 @@ These data are used throughout further analyses.
 
 ## STEP1_estimate_K
 
-Code used to estimate time varying carrying capacity of spotted hyenas in Ngorongoro Crater using the Spotted Hyena Individual-based Model (SHIM). We estimate carrying capacity in 3 scenarios:
+Code used to estimate time varying carrying capacity of spotted hyenas in Ngorongoro Crater using the Spotted Hyena Individual-based Model (SHIM).
+These are the key results of the publication and are used for most further analysis and plotting. There are two key files:
 
-- Time varying carrying capacity for each year.
-- Stable (non-time varying) carrying capacity that uses marginal predictions within the simulation.
-- Elasticity of time varying carrying capacity to individual vital rates.
-
-The outputs of all these simulations are stored as `.txt` files within the sub-folders.
+- `estimateK.R`:
+  - Estimate time varying carrying capacity (Kt) for each year. Outputs saved as `.txt` files in folders for each year.
+  - Estimate stable (non-time varying) carrying capacity that uses marginal predictions within the simulation.
+  Outputs saved as `.txt` files in folder 'marginal'
+- `estimateK_elasticity_oddsratio.R`
+  - Elasticity elasticity of time varying carrying capacity estimates to variation in individual vital rates. Outputs saved as
+  `.txt` files in folder 'elasticity_oddsratio'.
 
 ## STEP2_analysis_and_figures
 

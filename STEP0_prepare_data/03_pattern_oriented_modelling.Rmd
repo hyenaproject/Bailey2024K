@@ -16,19 +16,17 @@ library(ggplot2)
 library(spaMM)
 
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
-model_data <- readRDS(here::here("./data/model_data.RDS"))
-
-## GENERATED IN STEP1_estimate_K/estimateK.R
 modlist <- readRDS(here::here("./data/model_list.RDS"))
+start_pop <- readRDS(here::here("./data/starting_data.RDS"))
 
-db.path <- "../hyena_data/Fisidata_20_04_2024.sqlite"
+db.path <- here::here("./hyena_data/Fisidata_2025_04_18.sqlite")
 ```
 
 ```{r}
-## Run simulation for 313 timesteps (i.e. from 1996 - 2021)
-POM_sim <- simulation_fitrun(number_steps = 320, models = modlist,
+## Run simulation for 350 timesteps (i.e. ~from mid 1996 - early 2025)
+POM_sim <- simulation_fitrun(number_steps = 350, models = modlist,
                              return = TRUE, name = "POM",
-                             save_dir = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data"),
+                             save_dir = here::here("./data/POM"),
                              predictors = list(start_clan = \(ID) ID$clan_name,
                                                post_dispersal_status = \(ID) if (ID$birth_date == ID$first_date) "philo" else "disp",
                                                ## If we want a more refined estimate of rank
@@ -77,18 +75,18 @@ for (file in all_tbls){
   }
   
   write.csv(focal_tbl,
-            file = here::here(paste0("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data/", save_name, ".csv")), row.names = FALSE)
+            file = here::here(paste0("./data/POM/", save_name, ".csv")), row.names = FALSE)
   
 }
 
 build_package_database.full(db.name = "POM_sim",
-                            input.folder = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data"))
+                            input.folder = here::here("./data/POM/"))
 ```
 
 ```{r}
 # load_package_database.sim(POM_sim)
-load_package_database.full(here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/data/POM_sim.sqlite"))
-
+## We might get a warning because the sim goes slightly beyond the current date
+load_package_database.full(here::here("./data/POM/POM_sim.sqlite"))
 ```
 
 ```{r}
@@ -125,16 +123,6 @@ LRS_data_sim <- create_id_starting.table(sex = "female", lifestage = "adult",
                    source = "sim",
                    .groups = "drop") |> 
   dplyr::mutate(rank = fetch_id_rank.native.std(ID, at = fetch_id_date.at.age(ID, age = 2, unit = "year")))
-
-# LRS_data_sim <- create_id_starting.table(sex = "female", lifestage = "adult",
-#                                          ## We observed their full adult life
-#                                          lifestage.overlap = "within",
-#                                          from = "1978-12-25",
-#                                          to = find_pop_date.observation.last()) %>%
-#   mutate(RS = fetch_id_number.offspring(ID = .data$ID, filiation = c("mother_genetic", "mother_social_genetic"), age.mature = 6, unit = "month"),
-#          sex = fetch_id_sex(ID),
-#          source = "sim",
-#          rank = fetch_id_rank.native.std(ID, at = fetch_id_date.at.age(ID, age = 2, unit = "year")))
 
 ### FEMALE AGE AT FIRST REPRO
 firstrepro_data_sim <- create_id_offspring.table() %>% 
@@ -207,16 +195,6 @@ LRS_data_real <- create_id_starting.table(sex = "female", lifestage = "adult",
                    .groups = "drop")  |> 
   dplyr::mutate(rank = fetch_id_rank.native.std(ID, at = fetch_id_date.at.age(ID, age = 2, unit = "year")))
 
-# LRS_data_real <- create_id_starting.table(sex = "female", lifestage = "adult",
-#                                           ## We observed their full adult life
-#                                           lifestage.overlap = "within",
-#                                           from = find_pop_date.observation.first(),
-#                                           to = find_pop_date.observation.last()) %>%
-#   mutate(RS = fetch_id_number.offspring(ID = .data$ID, filiation = c("mother_genetic", "mother_social_genetic"), age.mature = 6, unit = "month"),
-#          sex = fetch_id_sex(ID),
-#          source = "real",
-#          rank = fetch_id_rank.native.std(ID, at = fetch_id_date.at.age(ID, age = 2, unit = "year")))
-
 ### FEMALE AGE AT FIRST REPRO
 firstrepro_data_real <- create_id_offspring.table() %>% 
   ## Find non-left censored individuals
@@ -259,15 +237,18 @@ lifespan_data_sim %>%
   summarise(mean = mean(lifespan),
             median = median(lifespan),
             max = max(lifespan),
-            se = sd(lifespan)/sqrt(n()))
+            se = sd(lifespan)/sqrt(n())) |> 
+  arrange(sex)
 ```
+
 ```{r}
 lifespan_data_real %>% 
   group_by(sex) %>% 
   summarise(mean = mean(lifespan),
             median = median(lifespan),
             max = max(lifespan),
-            se = sd(lifespan)/sqrt(n()))
+            se = sd(lifespan)/sqrt(n())) |> 
+  arrange(sex)
 ```
 
 ```{r}
@@ -282,7 +263,7 @@ ggplot() +
   theme_classic() +
   theme(axis.text = element_text(colour = "black"))
 
-ggsave(filename = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/lifespan.png"),
+ggsave(filename = here::here("./STEP0_prepare_data/03_pattern_oriented_modelling/plots/lifespan.png"),
        width = 9, heigh = 5)
 ```
 
@@ -295,6 +276,7 @@ LRS_data_sim %>%
             max = max(RS),
             se = sd(RS)/sqrt(n()))
 ```
+
 ```{r}
 LRS_data_real %>% 
   summarise(mean = mean(RS),
@@ -314,7 +296,7 @@ ggplot() +
   theme_classic() +
   theme(axis.text = element_text(colour = "black"))
 
-ggsave(filename = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/LRS.png"),
+ggsave(filename = here::here("./plots/POM/LRS.png"),
        width = 9, heigh = 5)
 ```
 
@@ -327,6 +309,7 @@ firstrepro_data_sim %>%
             max = max(age_first_repro),
             se = sd(age_first_repro)/sqrt(n()))
 ```
+
 ```{r}
 firstrepro_data_real %>% 
   summarise(mean = mean(age_first_repro),
@@ -348,7 +331,7 @@ ggplot() +
   theme_classic() +
   theme(axis.text = element_text(colour = "black"))
 
-ggsave(filename = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/age_at_first_repro.png"),
+ggsave(filename = here::here("./plots/POM/age_at_first_repro.png"),
        width = 9, heigh = 5)
 ```
 
@@ -362,6 +345,7 @@ IBI_data_sim %>%
             max = max(IBI),
             se = sd(IBI)/sqrt(n()))
 ```
+
 ```{r}
 IBI_data_real %>% 
   mutate(IBI = IBI_mo) |> 
@@ -382,7 +366,7 @@ ggplot() +
   theme_classic() +
   theme(axis.text = element_text(colour = "black"))
 
-ggsave(filename = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/IBI.png"),
+ggsave(filename = here::here("./plots/POM/IBI.png"),
        width = 9, heigh = 5)
 ```
 
@@ -431,6 +415,6 @@ ggplot() +
   theme(axis.text = element_text(colour = "black"),
         legend.position = "none")
 
-ggsave(filename = here::here("./STEP3_supplementary_analysis/SX_pattern_oriented_modelling/plots/rank_effect.png"),
+ggsave(filename = here::here("./plots/POM/rank_effect.png"),
        width = 9, heigh = 5)
 ```

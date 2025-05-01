@@ -1,9 +1,22 @@
-## Use all simulated outcomes from 2005
+---
+title: "03b_emergent_DD"
+author: "Liam D. Bailey"
+date: "2025-05-01"
+output: html_document
+---
+
+## Load packages
+
+```{r}
 library(ggplot2)
 library(dplyr)
 library(ggtext)
 library(here)
+```
 
+## Load files
+
+```{r}
 dir <- here::here("./STEP1_estimate_K/2001")
 
 files <- list.files(dir, pattern = ".txt", full.names = TRUE)
@@ -18,7 +31,9 @@ outcome <- purrr::map_df(.x = files, .f = function(file){
     filter(!is.na(lambdaN))
 
 })
+```
 
+```{r}
 (output <- ggplot() +
   geom_point(data = outcome |> filter(date <= as.Date("2025-01-01")), aes(x = Nt, y = lambdaN), alpha = 0.15) +
   geom_hline(yintercept = 1, lty = 2) +
@@ -32,5 +47,11 @@ outcome <- purrr::map_df(.x = files, .f = function(file){
         axis.title.x = element_markdown(colour = "black", size = 15),
         legend.position = "none",
         plot.margin = margin(b = 15, l = 15, t = 15)))
+```
 
+```{r}
 ggsave(plot = output, filename = here("./plots/supp_emergent_dd.png"), dpi = 600, height = 5, width = 7)
+```
+
+
+
