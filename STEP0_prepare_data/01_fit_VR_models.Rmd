@@ -31,7 +31,7 @@ We exclude 1996 because we only have half a year of data. We exclude 2023 to hav
 ```{r}
 ## Set a starting year. Filter out everything before this
 start_yr <- 1997 # We ignore 1996 because majority are left censored individuals
-end_yr   <- 2022 # Technically we can use data from early 2023, but not enough samples for year RE
+end_yr   <- 2023 # We also have data from early 2024, but not enough samples for year RE
 ```
 
 ## Extract model data
@@ -44,59 +44,10 @@ if (file.exists(here::here("./data/model_data.RDS"))) {
   model_data <- readRDS(here::here("./data/model_data.RDS"))
 } else {
   
+  ## This was extract in April 2025, last sighting was Feb 2025.
   db.path <- here::here("./hyena_data/Fisidata_2025_04_18.sqlite")
   
-  model_data_raw <- SHIM::generate_model_data(db = db.path)
-  
-  ## Save data as anonymised df (remove IDs)
-  model_data <- list(
-    ## Save all data that we can use to extract other data (e.g. 2023 for predictive accuracy)
-    all = model_data_raw$raw_data |> 
-      mutate(rank_category2 = case_when(nat_rank_std >= 1/3 ~ "top",
-                                        nat_rank_std <= -1/3 ~ "bottom",
-                                        TRUE ~ "middle")),
-    ## Save data for all other models
-    F_surv_data = model_data_raw$F_surv_data |> 
-      ## Filter just to include focal years
-      filter(year <= end_yr) |> 
-      mutate(rank_category2 = case_when(nat_rank_std >= 1/3 ~ "top",
-                                        nat_rank_std <= -1/3 ~ "bottom",
-                                        TRUE ~ "middle")) |> 
-      select(surv, year, rank_category2, age, clan_size, start_clan),
-    PreM_surv_data = model_data_raw$PreM_surv_data |> 
-      ## Filter just to include focal years
-      filter(year <= end_yr) |> 
-      mutate(rank_category2 = case_when(nat_rank_std >= 1/3 ~ "top",
-                                        nat_rank_std <= -1/3 ~ "bottom",
-                                        TRUE ~ "middle")) |> 
-      select(surv, year, rank_category2, age, clan_size, start_clan),
-    PostM_surv_data = model_data_raw$PostM_surv_data |> 
-      ## Filter just to include focal years
-      filter(year <= end_yr) |> 
-      select(surv, year, age, clan_size, start_clan, post_dispersal_status),
-    F_twin_data = model_data_raw$F_twin_data |> 
-      mutate(rank_category2 = case_when(nat_rank_std >= 1/3 ~ "top",
-                                        nat_rank_std <= -1/3 ~ "bottom",
-                                        TRUE ~ "middle")) |> 
-      select(twin, year, rank_category2, age, clan_size, start_clan, after1y_effort_all),
-    F_repro_primi = model_data_raw$F_repro_primi |> 
-      ## Filter just to include focal years
-      filter(year <= end_yr) |> 
-      mutate(rank_category2 = case_when(nat_rank_std >= 1/3 ~ "top",
-                                        nat_rank_std <= -1/3 ~ "bottom",
-                                        TRUE ~ "middle")) |> 
-      select(repro, year, rank_category2, clan_size, start_clan, after1y_effort_all, months),
-    F_repro_nonprimi = model_data_raw$F_repro_nonprimi |> 
-      ## Filter just to include focal years
-      filter(year <= end_yr) |> 
-      mutate(rank_category2 = case_when(nat_rank_std >= 1/3 ~ "top",
-                                        nat_rank_std <= -1/3 ~ "bottom",
-                                        TRUE ~ "middle")) |> 
-      select(repro, year, rank_category2, clan_size, start_clan, after1y_effort_all, months, age),
-    M_second_disp_data = model_data_raw$M_second_disp_data |> 
-      ## Filter just to include focal years
-      filter(year <= end_yr) |> 
-      select(second_disp, age, is_philo, year))
+  model_data <- SHIM::generate_model_data(db = db.path)
   
   saveRDS(model_data, here::here("./data/model_data.RDS"))
   
@@ -104,6 +55,8 @@ if (file.exists(here::here("./data/model_data.RDS"))) {
 ```
 
 ## Create utility fn
+
+### Fit models w/ exponent
 
 Refit a model with different exponent for clan size.
 
@@ -122,30 +75,7 @@ fit_exp <- function(x, model, train_data, verbose = FALSE){
 }
 ```
 
-Calculate Brier score for a given model
-
-```{r}
-## NOTE: Data expects to be already filtered with our output (e.g. surv) in a column called 'event'
-## Also see DescTools::BrierScore
-## Alternative, Metrics::logLoss
-calc_brierScore <- function(model, test_data, verbose = TRUE){
-  
-  ## Predict outcomes...
-  data$predict <- as.numeric(spaMM::predict.HLfit(object = model, newdata = test_data))
-  ## Convert observed outcomes (TRUE/FALSE) to integer
-  data$event <- as.numeric(data$event)
-  
-  ## Calculate Brier score
-  Brier_score <- (1/nrow(data))*sum((data$predict - data$event)^2)
-  
-  if (verbose) {
-    print(paste("Brier score:", Brier_score)) 
-  }
-  
-  return(Brier_score)
-  
-}
-```
+### Calculate predictive accuracy
 
 Calculate all values for a model
 
@@ -158,14 +88,17 @@ est_accuracy <- function(model, test_data, name = "", verbose = TRUE, ...){
   event <- as.numeric(test_data$event)
   
   tibble(name = name,
-         mod = list(model),
+         # mod = list(model), ## Don't save model because it breaks code to view
+         ## Using prebuild fn DescTools::BrierScore & Metrics::logLoss
+         ## Could also do manually
          logLik = logLik(model)[[1]],
          logLoss = Metrics::logLoss(event, predict),
          Brier = DescTools::BrierScore(x = event, pred = predict),
          ...)
-  
 }
 ```
+
+### Refit with new exponent and add predictive accuracy
 
 Refit and assess a model based with different exponent for clan size.
 
@@ -182,6 +115,8 @@ fit_and_est <- function(exp, model, train_data, test_data, verbose = TRUE, pb = 
   
 }
 ```
+
+### Refit for MULTIPLE exponents and plot different accuracy metrics
 
 Refit for multiple exponents and estimate fit.
 
@@ -212,8 +147,7 @@ exp_profiling <- function(exp, model, train_data, test_data){
               aes(y = y, x = mean(exp), label = label)) +
     geom_line(aes(x = exponent, y = value)) +
     geom_point(aes(x = exponent, y = value)) +
-    scale_x_continuous(limits = range(exp),
-                       breaks = exp) +
+    scale_x_continuous(limits = range(exp)) +
     theme_bw() +
     facet_wrap(facets = ~metric, scales = "free_y")
   
@@ -228,512 +162,857 @@ exp_profiling <- function(exp, model, train_data, test_data){
 ### Female survival
 
 ```{r}
-train_data <- model_data$all |>
+set.seed(10)
+whole_data_Fsurv <- model_data$F_surv_data |> 
+  ## Make sure that 2024 is excluded (not enough data to estimate RE)
   dplyr::filter(year <= end_yr) |> 
-  dplyr::filter(!is.na(.data$rank_category) & .data$sex == "female" & !is.na(.data$age)) %>%
-  #Filter out the (very few) cases where a female has changed status during a month
-  dplyr::filter(!(.data$status_start != .data$status_end & stringr::str_detect(.data$status_end, "selector|disperser|immigrant|transient")))
+  ## Add rank category (top, middle, bottom)
+  dplyr::mutate(rank_category2 = case_when(nat_rank_std >= 1/3 ~ "top",
+                                           nat_rank_std < -1/3 ~ "bottom",
+                                           TRUE ~ "middle")) |> 
+  dplyr::select(surv, year, rank_category2, age, clan_size, start_clan)
 
-test_data <- model_data$all |> 
-  dplyr::filter(year > end_yr) |> 
-  dplyr::filter(!is.na(.data$rank_category) & .data$sex == "female" & !is.na(.data$age)) %>%
-  #Filter out the (very few) cases where a female has changed status during a month
-  dplyr::filter(!(.data$status_start != .data$status_end & stringr::str_detect(.data$status_end, "selector|disperser|immigrant|transient"))) |> 
+test_sample <- sample(1:nrow(whole_data_Fsurv), size = as.integer(nrow(whole_data_Fsurv)*0.05), replace = FALSE)
+
+train_data_Fsurv <- whole_data_Fsurv[-test_sample, ]
+test_data_Fsurv <- whole_data_Fsurv[test_sample, ] |> 
   rename(event = surv)
 ```
 
+For female survival, we want to test some different polynomes for age to better predict sensence.
 
 ```{r}
-null_mod <- spaMM::fitme(surv ~ 1,
-                         data = train_data,
+null_mod <- spaMM::fitme(surv ~ 1 + (1|start_clan:year),
+                         data = train_data_Fsurv,
                          method = "PQL/L", family = binomial(link = "logit"))
 
-F_surv_mod_logit <- spaMM::fitme(surv ~ poly(age, 2)*rank_category2 +
-                                   clan_size +
-                                   ## Based on reviewer comments we may also want to add ID but
-                                   ## this takes ages to converge on my Mac (need on server I guess)
-                                   ## leaving out for now
-                                   clan_size:rank_category2 + start_clan + (1|start_clan:year),
-                                 data = train_data,
-                                 method = "PQL/L", family = binomial(link = "logit"))
+F_surv_mod_logit_poly1 <- spaMM::fitme(surv ~ poly(age, 1)*rank_category2 +
+                                         clan_size +
+                                         ## Based on reviewer comments we may also want to add ID but
+                                         ## this takes ages to converge on my Mac (need on server I guess)
+                                         ## leaving out for now
+                                         clan_size:rank_category2 + start_clan + (1|start_clan:year),
+                                       data = train_data_Fsurv,
+                                       method = "PQL/L", family = binomial(link = "logit"))
+
+F_surv_mod_logit_poly2 <- spaMM::fitme(surv ~ poly(age, 2)*rank_category2 +
+                                         clan_size +
+                                         clan_size:rank_category2 + start_clan + (1|start_clan:year),
+                                       data = train_data_Fsurv,
+                                       method = "PQL/L", family = binomial(link = "logit"))
+
+F_surv_mod_logit_poly3 <- spaMM::fitme(surv ~ poly(age, 3)*rank_category2 +
+                                         clan_size +
+                                         clan_size:rank_category2 + start_clan + (1|start_clan:year),
+                                       data = train_data_Fsurv,
+                                       method = "PQL/L", family = binomial(link = "logit"))
+
+F_surv_mod_logit_poly4 <- spaMM::fitme(surv ~ poly(age, 4)*rank_category2 +
+                                         clan_size +
+                                         clan_size:rank_category2 + start_clan + (1|start_clan:year),
+                                       data = train_data_Fsurv,
+                                       method = "PQL/L", family = binomial(link = "logit"))
 ```
 
-Fit different exponents and compare to null model
+Compare polynomes and null model based on predictive accuracy.
 
 ```{r}
-best_fit <- exp_profiling(exp = seq(0, 2, 0.1), F_surv_mod_logit, train_data, test_data)
-best_fit$plot
+polynome_mods_Fsurv <- list(null_mod, F_surv_mod_logit_poly1,
+                            F_surv_mod_logit_poly2, F_surv_mod_logit_poly3, F_surv_mod_logit_poly4)
+polynome_accuracy_Fsurv <- purrr::map2_dfr(.x = polynome_mods_Fsurv,
+                                           .y = c("null", "poly1", "poly2", "poly3", "poly4"),
+                                           .f = function(mod, test_data, name){
+                                             est_accuracy(model = mod, test_data = test_data, name = name)
+                                           },
+                                           test_data = test_data_Fsurv)
+polynome_accuracy_Fsurv |> 
+  arrange(Brier)
+```
+
+Poly2 has slightly lower Brier score.
+
+```{r}
+best_fit_Fsurv <- exp_profiling(exp = seq(0.1, 2, 0.1), F_surv_mod_logit_poly2,
+                                train_data = train_data_Fsurv, test_data = test_data_Fsurv)
+best_fit_Fsurv$plot
+```
+
+
+
+```{r}
+dplyr::bind_rows(polynome_accuracy_Fsurv, best_fit_Fsurv$data) |> 
+  dplyr::arrange(Brier)
+```
+
+```{r, echo = FALSE}
+probit_mod_Fsurv <- update(F_surv_mod_logit_poly2, family = binomial(link = "probit"))
+probit_fit_Fsurv <- exp_profiling(exp = seq(0.1, 2, 0.1), probit_mod_Fsurv, train_data_Fsurv, test_data_Fsurv)
+probit_fit_Fsurv$plot
 ```
 
 ```{r}
-est_accuracy(null_mod, test_data, name = "null") |> 
-  select(-mod) |> 
-  dplyr::bind_rows(best_fit$data |> select(-mod))
+output_table <- best_fit_Fsurv$data |> 
+  mutate(link = "logit",
+         age_polynome = 2) |> 
+  bind_rows(polynome_accuracy_Fsurv |> 
+              filter(name != "poly2") |> 
+              mutate(link = "logit",
+                     age_polynome = c(NA, 1, 3, 4),
+                     exponent = c(NA, 1, 1, 1))) |> 
+  bind_rows(probit_fit_Fsurv$data |> 
+              mutate(link = "probit",
+                     age_polynome = 2)) |> 
+  ## Arrange nicely
+  select(link, exponent, age_polynome, Brier, logLoss, logLik) |> 
+  dplyr::arrange(Brier)
+output_table
 ```
+
+Best model is logit with age polynome 2 and no exponent.
 
 ```{r}
-best_fit2 <- exp_profiling(exp = seq(0.8, 1.2, length.out = 15), F_surv_mod_logit, train_data, test_data)
-best_fit2$plot
+##Save output to include in supp material
+write.csv(output_table |> 
+            mutate(across(logLik:Brier, \(x) round(x, 4)),
+                   n = 1:n()) |> 
+            ## Only include top 10
+            ## Always include null model as well
+            filter(n <= 10 | is.na(exponent)) |> 
+            select(-n),
+          here::here("./data/model_accuracy/Fsurv.csv"), row.names = FALSE)
 ```
-
-Logit is the best using AIC. What about with Brier score? Does it affect our predictive power?
-
-```{r}
-for(model in names(F_surv_mod_yr)){
-  score <- round(calc_brierScore(data = test_data, model = F_surv_mod_yr[[model]]), 4)
-  print(paste0(model, " Brier score: ", score))
-}
-```
-
-Use likelihood profiling to pick best exponent value.
-
-```{r}
-output <- exp_profiling(exp = seq(0, 3, 0.25),
-                        data = train_data,
-                        model = F_surv_mod_yr$logit)
-output$plot
-```
-
-```{r}
-output$optim
-```
-
-*No significant difference from 1 exponent*. Best is `r output$optim$maximum`
-
-Compare exponents using Brier score
-
-```{r}
-output_Brier <- exp_profiling(exp = seq(-1, 3, 0.1),
-                              data = train_data, model = F_surv_mod_yr$logit,
-                              test_data = test_data, metric = "Brier", optimize = FALSE)
-output_Brier$plot
-```
-```{r}
-output_Brier$optim
-```
-
-Based on Brier score, best option is `r output_Brier$optim$minimise`
 
 #### Plot
 
-Plot a) Model with no exp (i.e. x = 1); b) model with best exponent from logLik; c) best exponent from Brier score
+Plot different model options and check for models that are biologically meaningless/non-sensical (e.g. survival increasing in very old individuals).
 
 ```{r}
-best_logLik  <- fit_exp(x = output$optim$maximum,
-                        model = F_surv_mod_yr$logit, data = train_data, verbose = FALSE)
-best_Brier  <- fit_exp(x = output_Brier$optim$minimise,
-                       model = F_surv_mod_yr$logit, data = train_data, verbose = FALSE)
-noexp  <- fit_exp(x = 1, model = F_surv_mod_yr$logit, data = train_data, verbose = FALSE)
+## Best model based on log-likelihood
+best_logLik  <- fit_exp(x = best_fit_Fsurv$data$exponent[best_fit_Fsurv$data$logLik == max(best_fit_Fsurv$data$logLik)],
+                        model = F_surv_mod_logit_poly2,
+                        train_data = train_data_Fsurv, verbose = FALSE)
+## Best logit model based on Brier score
+best_Brier  <- fit_exp(x = best_fit_Fsurv$data$exponent[best_fit_Fsurv$data$Brier == min(best_fit_Fsurv$data$Brier)],
+                       model = F_surv_mod_logit_poly2,
+                       train_data = train_data_Fsurv, verbose = FALSE)
+## Best probit model based on Brier score
+best_probit <- fit_exp(x = probit_fit_Fsurv$data$exponent[probit_fit_Fsurv$data$Brier == min(probit_fit_Fsurv$data$Brier)],
+                       model = probit_mod_Fsurv,
+                       train_data = train_data_Fsurv, verbose = FALSE)
+## Best model based on log loss function
+best_logLoss  <- fit_exp(x = best_fit_Fsurv$data$exponent[best_fit_Fsurv$data$logLoss == min(best_fit_Fsurv$data$logLoss)],
+                         model = F_surv_mod_logit_poly2,
+                         train_data = train_data_Fsurv, verbose = FALSE)
+## Model with no exponent
+noexp  <- fit_exp(x = 1, model = F_surv_mod_logit_poly2,
+                  train_data = train_data_Fsurv, verbose = FALSE)
 
 plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all = 1,
                          rank_category2 = c("top", "middle", "bottom"), age = 120, months = 12) %>% 
-  mutate(`Optimal (log likelihood)` = as.numeric(predict(best_logLik, newdata = ., type = "response", re.form = NA)),
-         `Optimal (Brier)` = as.numeric(predict(best_Brier, newdata = ., type = "response", re.form = NA)),
-         `No exponent` = as.numeric(predict(noexp, newdata = ., type = "response", re.form = NA))) %>% 
-  tidyr::pivot_longer(c(starts_with("Opt"), `No exponent`))
+  mutate(`Predict (logLik)` = as.numeric(predict(best_logLik, newdata = ., type = "response", re.form = NA)),
+         `Predict (Brier)` = as.numeric(predict(best_Brier, newdata = ., type = "response", re.form = NA)),
+         `Predict (best_logLoss)` = as.numeric(predict(best_logLoss, newdata = ., type = "response", re.form = NA)),
+         `Predict (probit)` = as.numeric(predict(best_probit, newdata = ., type = "response", re.form = NA)),
+         `Predict (No exponent)` = as.numeric(predict(noexp, newdata = ., type = "response", re.form = NA))) %>% 
+  tidyr::pivot_longer(starts_with("Pred"))
 
-ggplot(data = plot_data)+
+ggplot(data = plot_data) +
   geom_line(aes(x = clan_size, y = value, colour = rank_category2)) +
-  facet_wrap(facets = ~name, scales = "free_y")
+  facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
 ```
-
-For simplicity, we stick with no exponent (i.e. x = 1).
 
 ### Male pre-dispersal survival
 
 ```{r}
-train_data <- model_data$all |>
+set.seed(10)
+whole_data_PreMsurv <- model_data$PreM_surv_data |> 
+  ## Filter out not full years
   dplyr::filter(year <= end_yr) |> 
-  dplyr::filter(!is.na(.data$rank_category) & .data$sex == "male" & !is.na(.data$age) &
-                  .data$dispersal_status == "pre_dispersal")
+  ## Add rank category (top, middle, bottom)
+  dplyr::mutate(rank_category2 = case_when(nat_rank_std >= 1/3 ~ "top",
+                                           nat_rank_std < -1/3 ~ "bottom",
+                                           TRUE ~ "middle")) |> 
+  dplyr::select(surv, year, rank_category2, age, clan_size, start_clan)
 
-test_data <- model_data$all |> 
-  dplyr::filter(year > end_yr) |> 
-  dplyr::filter(!is.na(.data$rank_category) & .data$sex == "male" & !is.na(.data$age) &
-                  .data$dispersal_status == "pre_dispersal") |> 
+test_sample <- sample(1:nrow(whole_data_PreMsurv), size = as.integer(nrow(whole_data_PreMsurv)*0.05), replace = FALSE)
+
+train_data_PreMsurv <- whole_data_PreMsurv[-test_sample, ]
+test_data_PreMsurv  <- whole_data_PreMsurv[test_sample, ] |> 
   rename(event = surv)
 ```
 
+Test different polynomes for age. Anything above 2nd order polynomial creates unrealistic biological patterns and are ignored.
+
 ```{r}
-PreM_surv_mod_yr <- compare_linkfn(surv ~ poly(age, 2)*rank_category2 +
-                                     clan_size +
-                                     clan_size:rank_category2 + start_clan + (1|start_clan:year),
-                                   data = train_data,
-                                   method = "PQL/L")
+null_mod <- spaMM::fitme(surv ~ 1 + (1|start_clan:year),
+                         data = train_data_PreMsurv,
+                         method = "PQL/L", family = binomial(link = "logit"))
+
+PreM_surv_mod_logit_poly1 <- spaMM::fitme(surv ~ poly(age, 1)*rank_category2 +
+                                            clan_size +
+                                            clan_size:rank_category2 + start_clan + (1|start_clan:year),
+                                          data = train_data_PreMsurv,
+                                          method = "PQL/L", family = binomial(link = "logit"))
+
+PreM_surv_mod_logit_poly2 <- spaMM::fitme(surv ~ poly(age, 2)*rank_category2 +
+                                            clan_size +
+                                            clan_size:rank_category2 + start_clan + (1|start_clan:year),
+                                          data = train_data_PreMsurv,
+                                          method = "PQL/L", family = binomial(link = "logit"))
 ```
 
-logit is equally good.
+Compare polynomes and null model based on predictive accuracy.
 
 ```{r}
-for(model in names(PreM_surv_mod_yr)){
-  score <- round(calc_brierScore(data = test_data, model = PreM_surv_mod_yr[[model]]), 4)
-  print(paste0(model, " Brier score: ", score))
-}
+polynome_mods_PreMsurv <- list(null_mod, PreM_surv_mod_logit_poly1, PreM_surv_mod_logit_poly2)
+polynome_accuracy_PreMsurv <- purrr::map2_dfr(.x = polynome_mods_PreMsurv, .y = c("null", "poly1", "poly2"), .f = est_accuracy,
+                                              test_data = test_data_PreMsurv)
+polynome_accuracy_PreMsurv |> 
+  arrange(Brier)
 ```
 
-Use likelihood profiling to pick best exponent value.
+Model with 2nd order polynomes for age has best predictive fit. Look at different exponents for density dependence.
 
 ```{r}
-output <- exp_profiling(exp = c(seq(-1, -0.25, 0.25),
-                                seq(0.25, 2, 0.25),
-                                3, 4, 5, 6),
-                        data = train_data,
-                        model = PreM_surv_mod_yr$logit,
-                        ## Struggling to optimise alogrithmically
-                        optimize = FALSE)
-output$plot
-```
-
-No sig difference. -0.25 is best.
-
-```{r}
-output$optim
-```
-
-Compare exponents using Brier score
-
-```{r}
-output_Brier <- exp_profiling(exp = seq(-1, 6, 0.25),
-                              model = PreM_surv_mod_yr$logit,
-                              data = train_data,
-                              test_data = test_data, metric = "Brier", optimize = FALSE)
-output_Brier$plot
+best_fit_PreMsurv <- exp_profiling(exp = seq(0.1, 2, 0.1), PreM_surv_mod_logit_poly2, train_data_PreMsurv, test_data_PreMsurv)
+best_fit_PreMsurv$plot
 ```
 
 ```{r}
-output_Brier$optim
+dplyr::bind_rows(polynome_accuracy_PreMsurv, best_fit_PreMsurv$data) |> 
+  dplyr::arrange(Brier)
+```
+
+Model with no exponent and poly 2 comes out as best. With likelihood profiling, the best model is not significantly different to exponent 1. Check if predictive fit would be better with probit link.
+
+```{r, echo = FALSE}
+probit_mod_PreMsurv <- update(PreM_surv_mod_logit_poly2, family = binomial(link = "probit"))
+probit_fit_PreMsurv <- exp_profiling(exp = seq(0.1, 2, 0.1), probit_mod_PreMsurv, train_data_PreMsurv, test_data_PreMsurv)
+probit_fit_PreMsurv$plot
+```
+
+```{r}
+output_table <- best_fit_PreMsurv$data |> 
+  mutate(link = "logit",
+         age_polynome = 2) |> 
+  bind_rows(polynome_accuracy_PreMsurv |> 
+              filter(name != "poly2") |> 
+              mutate(link = c("logit"),
+                     age_polynome = c(NA, 1),
+                     exponent = c(NA, 1))) |> 
+  bind_rows(probit_fit_PreMsurv$data |> 
+              mutate(link = "probit",
+                     age_polynome = 2)) |> 
+  ## Arrange nicely
+  select(link, exponent, age_polynome, Brier, logLoss, logLik) |> 
+  dplyr::arrange(Brier)
+output_table
+```
+
+Best model is probit with age polynome 2 and no exponent.
+
+```{r}
+##Save output to include in supp material
+write.csv(output_table |> 
+            mutate(across(logLik:Brier, \(x) round(x, 4)),
+                   n = 1:n()) |> 
+            ## Only include top 10
+            ## Always include null model as well
+            filter(n <= 10 | is.na(exponent)) |> 
+            select(-n),
+          here::here("./data/model_accuracy/PreMsurv.csv"), row.names = FALSE)
 ```
 
 #### Plot
 
-Plot a) Model with no exp (i.e. x = 1); b) model with best exponent from logLik; c) best exponent from Brier score
+Probit model is best. All models tend to poorly estimate low rank survival. This has the least amount of data.
 
 ```{r}
-best_logLik  <- fit_exp(x = output$optim$maximum,
-                        model = PreM_surv_mod_yr$logit, data = train_data, verbose = FALSE)
-best_Brier  <- fit_exp(x = output_Brier$optim$minimise,
-                       model = PreM_surv_mod_yr$logit, data = train_data, verbose = FALSE)
-noexp  <- fit_exp(x = 1, model = PreM_surv_mod_yr$logit, data = train_data, verbose = FALSE)
+## Best model based on log-likelihood
+best_logLik  <- fit_exp(x = best_fit_PreMsurv$data$exponent[best_fit_PreMsurv$data$logLik == max(best_fit_PreMsurv$data$logLik)],
+                        model = PreM_surv_mod_logit_poly2,
+                        train_data = train_data_PreMsurv, verbose = FALSE)
+## Best logit model based on Brier score
+best_Brier  <- fit_exp(x = best_fit_PreMsurv$data$exponent[best_fit_PreMsurv$data$Brier == min(best_fit_PreMsurv$data$Brier)],
+                       model = PreM_surv_mod_logit_poly2,
+                       train_data = train_data_PreMsurv, verbose = FALSE)
+## Best probit model based on Brier score
+best_probit <- fit_exp(x = probit_fit_PreMsurv$data$exponent[probit_fit_PreMsurv$data$Brier == min(probit_fit_PreMsurv$data$Brier)],
+                       model = probit_mod_PreMsurv,
+                       train_data = train_data_PreMsurv, verbose = FALSE)
+## Best model based on log loss function
+best_logLoss  <- fit_exp(x = best_fit_PreMsurv$data$exponent[best_fit_PreMsurv$data$logLoss == min(best_fit_PreMsurv$data$logLoss)],
+                         model = PreM_surv_mod_logit_poly2,
+                         train_data = train_data_PreMsurv, verbose = FALSE)
+## Model with no exponent
+noexp  <- fit_exp(x = 1, model = PreM_surv_mod_logit_poly2,
+                  train_data = train_data_PreMsurv, verbose = FALSE)
 
 plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all = 1,
                          rank_category2 = c("top", "middle", "bottom"), age = 120, months = 12) %>% 
-  mutate(`Optimal (log likelihood)` = as.numeric(predict(best_logLik, newdata = ., type = "response", re.form = NA)),
-         `Optimal (Brier)` = as.numeric(predict(best_Brier, newdata = ., type = "response", re.form = NA)),
-         `No exponent` = as.numeric(predict(noexp, newdata = ., type = "response", re.form = NA))) %>% 
-  tidyr::pivot_longer(c(starts_with("Opt"), `No exponent`))
+  mutate(`Predict (logLik)` = as.numeric(predict(best_logLik, newdata = ., type = "response", re.form = NA)),
+         `Predict (Brier)` = as.numeric(predict(best_Brier, newdata = ., type = "response", re.form = NA)),
+         `Predict (best_logLoss)` = as.numeric(predict(best_logLoss, newdata = ., type = "response", re.form = NA)),
+         `Predict (probit)` = as.numeric(predict(best_probit, newdata = ., type = "response", re.form = NA)),
+         `Predict (No exponent)` = as.numeric(predict(noexp, newdata = ., type = "response", re.form = NA))) %>% 
+  tidyr::pivot_longer(starts_with("Pred"))
 
-ggplot(data = plot_data)+
+ggplot(data = plot_data) +
   geom_line(aes(x = clan_size, y = value, colour = rank_category2)) +
-  facet_wrap(facets = ~name, scales = "free_y")
+  facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
 ```
 
 ### Male post-dispersal survival
 
 ```{r}
-train_data <- model_data$all |>
-  dplyr::filter(year <= end_yr) |> 
-  dplyr::filter(.data$sex == "male" & !is.na(.data$age) &
-                  .data$dispersal_status == "post_dispersal") %>%
-  dplyr::mutate(post_dispersal_status = as.factor(.data$post_dispersal_status)) %>%
-  #In this case, we need to exclude the month of dispersal (not clear how long they were pre-disperser or post-disperser here)
-  #Also exclude the month changing from natal to philo.
-  #We don't do this for females because they are still within the same model and status is not included as a model term
-  dplyr::filter(!(.data$status_start != .data$status_end & stringr::str_detect(.data$status_end,
-                                                                               "selector|disperser|immigrant|transient|philopatric")))
+set.seed(10)
+whole_data_PostMsurv <- model_data$PostM_surv_data |> 
+  ## Filter out not full years
+  dplyr::filter(year <= end_yr & !is.na(post_dispersal_status)) |> 
+  ## Add rank category (top, middle, bottom)
+  dplyr::mutate(rank_category2 = case_when(nat_rank_std >= 1/3 ~ "top",
+                                           nat_rank_std < -1/3 ~ "bottom",
+                                           TRUE ~ "middle")) |> 
+  dplyr::select(surv, year, rank_category2, post_dispersal_status, age, clan_size, start_clan)
 
-test_data <- model_data$all |> 
-  dplyr::filter(year > end_yr) |> 
-  dplyr::filter(.data$sex == "male" & !is.na(.data$age) &
-                  .data$dispersal_status == "post_dispersal") %>%
-  dplyr::mutate(post_dispersal_status = as.factor(.data$post_dispersal_status)) %>%
-  #In this case, we need to exclude the month of dispersal (not clear how long they were pre-disperser or post-disperser here)
-  #Also exclude the month changing from natal to philo.
-  #We don't do this for females because they are still within the same model and status is not included as a model term
-  dplyr::filter(!(.data$status_start != .data$status_end & stringr::str_detect(.data$status_end,
-                                                                               "selector|disperser|immigrant|transient|philopatric"))) |> 
+test_sample <- sample(1:nrow(whole_data_PostMsurv), size = as.integer(nrow(whole_data_PostMsurv)*0.05), replace = FALSE)
+
+train_data_PostMsurv <- whole_data_PostMsurv[-test_sample, ]
+test_data_PostMsurv  <- whole_data_PostMsurv[test_sample, ] |> 
   rename(event = surv)
 ```
 
+Only consider 1st and 2nd order polynomials. Anything higher creates biologically unrealistic patterns (e.g. survival declines and then increase with age).
+
 ```{r}
-PostM_surv_mod_yr <- compare_linkfn(surv ~ poly(age, 2)*post_dispersal_status +
-                                      clan_size +
-                                      start_clan + (1|start_clan:year),
-                                    data = train_data,
-                                    method = "PQL/L")
+null_mod <- spaMM::fitme(surv ~ 1 + (1|start_clan:year),
+                         data = train_data_PreMsurv,
+                         method = "PQL/L", family = binomial(link = "logit"))
+
+PostM_surv_mod_logit_poly1 <- spaMM::fitme(surv ~ poly(age, 1)*post_dispersal_status +
+                                             clan_size +
+                                             start_clan + (1|start_clan:year),
+                                           data = train_data_PostMsurv,
+                                           method = "PQL/L", family = binomial(link = "logit"))
+
+PostM_surv_mod_logit_poly2 <- spaMM::fitme(surv ~ poly(age, 2)*post_dispersal_status +
+                                             clan_size +
+                                             start_clan + (1|start_clan:year),
+                                           data = train_data_PostMsurv,
+                                           method = "PQL/L", family = binomial(link = "logit"))
 ```
 
-logit is comparable (a bit worse than probit and cloglog but kept for easy comparison)
+Compare polynomes and null model based on predictive accuracy.
 
 ```{r}
-for(model in names(PostM_surv_mod_yr)){
-  score <- round(calc_brierScore(data = test_data, model = PostM_surv_mod_yr[[model]]), 4)
-  print(paste0(model, " Brier score: ", score))
-}
+polynome_mods_PostMsurv <- list(null_mod, PostM_surv_mod_logit_poly1, PostM_surv_mod_logit_poly2)
+polynome_accuracy_PostMsurv <- purrr::map2_dfr(.x = polynome_mods_PostMsurv, .y = c("null", "poly1", "poly2"), .f = est_accuracy,
+                                               test_data = test_data_PostMsurv)
+polynome_accuracy_PostMsurv |> 
+  arrange(Brier)
 ```
 
-Use likelihood profiling to pick best exponent value.
+Model w/ 2nd order polynome appears best.
 
 ```{r}
-output <- exp_profiling(c(-2, -1, -0.5, -0.1, 0.1, 0.5, 1, 2, 3, 4, 5, 6, 7), data = train_data,
-                        model = PostM_surv_mod_yr$logit)
-output$plot
-```
-
-Not significantly different to 1. Best is 1
-
-Compare exponents using Brier score
-
-```{r}
-output_Brier <- exp_profiling(exp = seq(-2, 7, 0.5), data = train_data, model = PostM_surv_mod_yr$logit,
-                              test_data = test_data, metric = "Brier", optimize = FALSE)
-output_Brier$plot
+best_fit_PostMsurv <- exp_profiling(exp = seq(0.1, 2, 0.1), PostM_surv_mod_logit_poly2, train_data_PostMsurv, test_data_PostMsurv)
+best_fit_PostMsurv$plot
 ```
 
 ```{r}
-output_Brier$optim
+dplyr::bind_rows(polynome_accuracy_PostMsurv, best_fit_PostMsurv$data) |> 
+  dplyr::arrange(Brier)
+```
+
+```{r, echo = FALSE}
+probit_mod_PostMsurv <- update(PostM_surv_mod_logit_poly2, family = binomial(link = "probit"))
+probit_fit_PostMsurv <- exp_profiling(exp = seq(0.1, 2, 0.1), probit_mod_PostMsurv, train_data_PostMsurv, test_data_PostMsurv)
+probit_fit_PostMsurv$plot
+```
+
+```{r}
+output_table <- best_fit_PostMsurv$data |> 
+  mutate(link = "logit",
+         age_polynome = 2) |> 
+  bind_rows(polynome_accuracy_PostMsurv |> 
+              filter(name != "poly2") |> 
+              mutate(link = "logit",
+                     age_polynome = c(NA, 1),
+                     exponent = c(NA, 1))) |> 
+  bind_rows(probit_fit_PostMsurv$data |> 
+              mutate(link = "probit",
+                     age_polynome = 2)) |> 
+  ## Arrange nicely
+  select(link, exponent, age_polynome, Brier, logLoss, logLik) |> 
+  dplyr::arrange(Brier)
+output_table
+```
+
+Logit with slight exponent (1.4) and 2nd order polynomial is best.
+
+```{r}
+##Save output to include in supp material
+write.csv(output_table |> 
+            mutate(across(logLik:Brier, \(x) round(x, 4)),
+                   n = 1:n()) |> 
+            ## Only include top 10
+            ## Always include null model as well
+            filter(n <= 10 | is.na(exponent)) |> 
+            select(-n),
+          here::here("./data/model_accuracy/PostMsurv.csv"), row.names = FALSE)
 ```
 
 #### Plot
 
+Best model (with 1.4 exponent) is slightly less steep than standard model.
+
 ```{r}
-best_logLik  <- fit_exp(x = output$optim$maximum,
-                        model = PostM_surv_mod_yr$logit, data = train_data, verbose = FALSE)
-best_Brier  <- fit_exp(x = output_Brier$optim$minimise,
-                       model = PostM_surv_mod_yr$logit, data = train_data, verbose = FALSE)
-noexp  <- fit_exp(x = 1, model = PostM_surv_mod_yr$logit, data = train_data, verbose = FALSE)
+## Best model based on log-likelihood
+best_logLik  <- fit_exp(x = best_fit_PostMsurv$data$exponent[best_fit_PostMsurv$data$logLik == max(best_fit_PostMsurv$data$logLik)],
+                        model = PostM_surv_mod_logit_poly2,
+                        train_data = train_data_PostMsurv, verbose = FALSE)
+## Best logit model based on Brier score
+best_Brier  <- fit_exp(x = best_fit_PostMsurv$data$exponent[best_fit_PostMsurv$data$Brier == min(best_fit_PostMsurv$data$Brier)],
+                       model = PostM_surv_mod_logit_poly2,
+                       train_data = train_data_PostMsurv, verbose = FALSE)
+## Best probit model based on Brier score
+best_probit <- fit_exp(x = probit_fit_PostMsurv$data$exponent[probit_fit_PostMsurv$data$Brier == min(probit_fit_PostMsurv$data$Brier)],
+                       model = probit_mod_PostMsurv,
+                       train_data = train_data_PostMsurv, verbose = FALSE)
+## Best model based on log loss function
+best_logLoss  <- fit_exp(x = best_fit_PostMsurv$data$exponent[best_fit_PostMsurv$data$logLoss == min(best_fit_PostMsurv$data$logLoss)],
+                         model = PostM_surv_mod_logit_poly2,
+                         train_data = train_data_PostMsurv, verbose = FALSE)
+## Model with no exponent
+noexp  <- fit_exp(x = 1, model = PostM_surv_mod_logit_poly2,
+                  train_data = train_data_PostMsurv, verbose = FALSE)
 
 plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all = 1,
-                         rank_category2 = c("top", "middle", "bottom"), age = 120, months = 12) %>% 
-  mutate(`Optimal (log likelihood)` = as.numeric(predict(best_logLik, newdata = ., type = "response", re.form = NA)),
-         `Optimal (Brier)` = as.numeric(predict(best_Brier, newdata = ., type = "response", re.form = NA)),
-         `No exponent` = as.numeric(predict(noexp, newdata = ., type = "response", re.form = NA))) %>% 
-  tidyr::pivot_longer(c(starts_with("Opt"), `No exponent`))
+                         post_dispersal_status = c("disp", "philo"), age = 120, months = 12) %>% 
+  mutate(`Predict (logLik)` = as.numeric(predict(best_logLik, newdata = ., type = "response", re.form = NA)),
+         `Predict (Brier)` = as.numeric(predict(best_Brier, newdata = ., type = "response", re.form = NA)),
+         `Predict (best_logLoss)` = as.numeric(predict(best_logLoss, newdata = ., type = "response", re.form = NA)),
+         `Predict (probit)` = as.numeric(predict(best_probit, newdata = ., type = "response", re.form = NA)),
+         `Predict (No exponent)` = as.numeric(predict(noexp, newdata = ., type = "response", re.form = NA))) %>% 
+  tidyr::pivot_longer(starts_with("Pred"))
 
-ggplot(data = plot_data)+
-  geom_line(aes(x = clan_size, y = value, colour = rank_category2)) +
-  facet_wrap(facets = ~name, scales = "free_y")
+ggplot(data = plot_data) +
+  geom_line(aes(x = clan_size, y = value, colour = post_dispersal_status)) +
+  facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
 ```
-
-logit with no exponent.
 
 ### Primiparous reproduction
 
 ```{r}
-F_repro_primi_mod_yr <- compare_linkfn(repro ~ log(months+0.01)*rank_category2 +
-                                         rank_category2*clan_size +
-                                         after1y_effort_all + start_clan + (1|start_clan:year),
-                                       data = model_data$F_repro_primi,
-                                       method = "PQL/L")
+set.seed(10)
+whole_data_Fprimi <- model_data$F_repro_primi |> 
+  ## Filter out not full years
+  dplyr::filter(year <= end_yr) |> 
+  ## Add rank category (top, middle, bottom)
+  dplyr::mutate(rank_category2 = case_when(nat_rank_std >= 1/3 ~ "top",
+                                           nat_rank_std < -1/3 ~ "bottom",
+                                           TRUE ~ "middle")) |> 
+  dplyr::select(repro, year, rank_category2, clan_size, start_clan, after1y_effort_all, months)
+
+test_sample <- sample(1:nrow(whole_data_Fprimi), size = as.integer(nrow(whole_data_Fprimi)*0.05), replace = FALSE)
+
+train_data_Fprimi <- whole_data_Fprimi[-test_sample, ]
+test_data_Fprimi  <- whole_data_Fprimi[test_sample, ] |> 
+  rename(event = repro)
 ```
-
-Probit is much better, but sticking with logit now for consistency.
-
-Use likelihood profiling to pick best exponent value.
 
 ```{r}
-output <- exp_profiling(c(-2, -1, -0.5, -0.1, 0.1, 0.5, 1, 2), data = model_data$F_repro_primi, model = F_repro_primi_mod_yr$logit)
-output
+null_mod <- spaMM::fitme(repro ~ after1y_effort_all + (1|start_clan:year),
+                         data = train_data_Fprimi,
+                         method = "PQL/L", family = binomial(link = "logit"))
+
+## We include an atan transform on month to allow for higher possibility of reproduction at younger ages
+F_repro_primi_mod_logit <- spaMM::fitme(repro ~ atan(months)*rank_category2 +
+                                          rank_category2*clan_size +
+                                          after1y_effort_all + start_clan + (1|start_clan:year),
+                                        data = train_data_Fprimi,
+                                        method = "PQL/L", family = binomial(link = "logit"))
 ```
 
-No significant different. Best is -0.71
+Fit different exponents and compare to null model
+
+```{r}
+best_fit_Fprimi <- exp_profiling(exp = seq(0.1, 2, 0.1),
+                                 F_repro_primi_mod_logit,
+                                 train_data_Fprimi, test_data_Fprimi)
+best_fit_Fprimi$plot
+```
+
+```{r}
+est_accuracy(null_mod, test_data_Fprimi, name = "null") |> 
+  dplyr::bind_rows(best_fit_Fprimi$data) |> 
+  arrange(Brier)
+```
+
+```{r, echo = FALSE}
+probit_mod_Fprimi <- update(F_repro_primi_mod_logit, family = binomial(link = "probit"))
+probit_fit_Fprimi <- exp_profiling(exp = seq(0.1, 2, 0.1), probit_mod_Fprimi, train_data_Fprimi, test_data_Fprimi)
+probit_fit_Fprimi$plot
+```
+
+```{r}
+output_table <- best_fit_Fprimi$data |> 
+  mutate(link = "logit") |> 
+  bind_rows(probit_fit_Fprimi$data |> 
+              mutate(link = "probit")) |> 
+  bind_rows(est_accuracy(null_mod, test_data_Fprimi, name = "null") |> 
+              mutate(link = "logit")) |> 
+  ## Arrange nicely
+  select(link, exponent, Brier, logLoss, logLik) |> 
+  dplyr::arrange(Brier)
+output_table
+```
+
+Probit model with no exponent is best.
+
+```{r}
+##Save output to include in supp material
+write.csv(output_table |> 
+            mutate(across(logLik:Brier, \(x) round(x, 4)),
+                   n = 1:n()) |> 
+            ## Only include top 10
+            ## Always include null model as well
+            filter(n <= 10 | is.na(exponent)) |> 
+            select(-n),
+          here::here("./data/model_accuracy/Fprimirepro.csv"), row.names = FALSE)
+```
 
 #### Plot
 
+Probit model creates larger difference between top females and others in DD effects.
+
 ```{r}
-best1y  <- fit_exp(x = -0.71, model = F_repro_primi_mod_yr$logit, data = model_data$F_repro_primi, verbose = FALSE)
+## Best model based on log-likelihood
+best_logLik  <- fit_exp(x = best_fit_Fprimi$data$exponent[best_fit_Fprimi$data$logLik == max(best_fit_Fprimi$data$logLik)],
+                        model = F_repro_primi_mod_logit,
+                        train_data = train_data_Fprimi, verbose = FALSE)
+## Best logit model based on Brier score
+best_Brier  <- fit_exp(x = best_fit_Fprimi$data$exponent[best_fit_Fprimi$data$Brier == min(best_fit_Fprimi$data$Brier)],
+                       model = F_repro_primi_mod_logit,
+                       train_data = train_data_Fprimi, verbose = FALSE)
+## Best probit model based on Brier score
+best_probit <- fit_exp(x = probit_fit_Fprimi$data$exponent[probit_fit_Fprimi$data$Brier == min(probit_fit_Fprimi$data$Brier)],
+                       model = probit_mod_Fprimi,
+                       train_data = train_data_Fprimi, verbose = FALSE)
+## Best model based on log loss function
+best_logLoss  <- fit_exp(x = best_fit_Fprimi$data$exponent[best_fit_Fprimi$data$logLoss == min(best_fit_Fprimi$data$logLoss)],
+                         model = F_repro_primi_mod_logit,
+                         train_data = train_data_Fprimi, verbose = FALSE)
+## Model with no exponent
+noexp  <- fit_exp(x = 1, model = F_repro_primi_mod_logit,
+                  train_data = train_data_Fprimi, verbose = FALSE)
 
 plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all = 1,
                          rank_category2 = c("top", "middle", "bottom"), age = 120, months = 12) %>% 
-  mutate(pred1y = as.numeric(predict(F_repro_primi_mod_yr$logit, newdata = ., type = "response", re.form = NA)),
-         pred1y_best = as.numeric(predict(best1y, newdata = ., type = "response", re.form = NA)),
-         pred1y_probit = as.numeric(predict(F_repro_primi_mod_yr$probit, newdata = ., type = "response", re.form = NA))) %>% 
-  tidyr::pivot_longer(starts_with("pred"))
+  mutate(`Predict (logLik)` = as.numeric(predict(best_logLik, newdata = ., type = "response", re.form = NA)),
+         `Predict (Brier)` = as.numeric(predict(best_Brier, newdata = ., type = "response", re.form = NA)),
+         `Predict (best_logLoss)` = as.numeric(predict(best_logLoss, newdata = ., type = "response", re.form = NA)),
+         `Predict (probit)` = as.numeric(predict(best_probit, newdata = ., type = "response", re.form = NA)),
+         `Predict (No exponent)` = as.numeric(predict(noexp, newdata = ., type = "response", re.form = NA)),
+         `Predict (Null)` = as.numeric(predict(null_mod, newdata = ., type = "response", re.form = NA))) %>% 
+  tidyr::pivot_longer(starts_with("Pred"))
 
-ggplot(data = plot_data)+
+ggplot(data = plot_data) +
   geom_line(aes(x = clan_size, y = value, colour = rank_category2)) +
-  facet_wrap(facets = ~name, scales = "free_y")
+  facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
 ```
-
-Logit with no exponent is best.
 
 ### Multiparous reproduction
 
 ```{r}
-F_repro_nonprimi_mod_yr <- compare_linkfn(repro ~ log(months+0.01)*rank_category2 + log(months+0.01)*age +
-                                            clan_size*rank_category2 + after1y_effort_all + start_clan + (1|start_clan:year),
-                                          data = model_data$F_repro_nonprimi,
-                                          method = "PQL/L")
+set.seed(10)
+whole_data_Fnonprimi <- model_data$F_repro_nonprimi |> 
+  ## Filter out not full years
+  dplyr::filter(year <= end_yr) |> 
+  ## Add rank category (top, middle, bottom)
+  dplyr::mutate(rank_category2 = case_when(nat_rank_std >= 1/3 ~ "top",
+                                           nat_rank_std < -1/3 ~ "bottom",
+                                           TRUE ~ "middle")) |> 
+  dplyr::select(repro, year, rank_category2, clan_size, start_clan, after1y_effort_all, months, age)
+
+test_sample <- sample(1:nrow(whole_data_Fnonprimi), size = as.integer(nrow(whole_data_Fnonprimi)*0.05), replace = FALSE)
+
+train_data_Fnonprimi <- whole_data_Fnonprimi[-test_sample, ]
+test_data_Fnonprimi  <- whole_data_Fnonprimi[test_sample, ] |> 
+  rename(event = repro)
 ```
-
-Logit is best.
-
-Use likelihood profiling to pick best exponent value.
 
 ```{r}
-output <- exp_profiling(c(-2, -1.5, -1, -0.5, -0.1, 0.1, 0.5, 1, 2, 3, 4, 5, 6, 7), data = model_data$F_repro_nonprimi, model = F_repro_nonprimi_mod_yr$logit)
-output
+null_mod <- spaMM::fitme(repro ~ after1y_effort_all + (1|start_clan:year),
+                         data = train_data_Fnonprimi,
+                         method = "PQL/L", family = binomial(link = "logit"))
+
+F_repro_nonprimi_mod_logit <- spaMM::fitme(repro ~ atan(months)*rank_category2 + atan(months)*age +
+                                             clan_size*rank_category2 + after1y_effort_all + start_clan + (1|start_clan:year),
+                                           data = train_data_Fnonprimi,
+                                           method = "PQL/L", family = binomial(link = "logit"))
 ```
 
-No significant difference. Best is 0.39
+Fit different exponents and compare to null model
+
+```{r}
+best_fit_Fnonprimi <- exp_profiling(exp = seq(0.1, 2, 0.1),
+                                    F_repro_nonprimi_mod_logit,
+                                    train_data_Fnonprimi, test_data_Fnonprimi)
+best_fit_Fnonprimi$plot
+```
+
+```{r}
+est_accuracy(null_mod, test_data_Fnonprimi, name = "null") |> 
+  dplyr::bind_rows(best_fit_Fnonprimi$data) |> 
+  arrange(Brier)
+```
+
+```{r, echo = FALSE}
+probit_mod_Fnonprimi <- update(F_repro_nonprimi_mod_logit, family = binomial(link = "probit"))
+probit_fit_Fnonprimi <- exp_profiling(exp = seq(0.1, 2, 0.1), probit_mod_Fnonprimi, train_data_Fnonprimi, test_data_Fnonprimi)
+probit_fit_Fnonprimi$plot
+```
+
+```{r}
+output_table <- best_fit_Fnonprimi$data |> 
+  mutate(link = "logit") |> 
+  bind_rows(probit_fit_Fnonprimi$data |> 
+              mutate(link = "probit")) |> 
+  bind_rows(est_accuracy(null_mod, test_data_Fnonprimi, name = "null") |> 
+              mutate(link = "logit")) |> 
+  ## Arrange nicely
+  select(link, exponent, Brier, logLoss, logLik) |> 
+  dplyr::arrange(Brier)
+output_table
+```
+
+Logit model with no exponent is best.
+
+```{r}
+##Save output to include in supp material
+write.csv(output_table |> 
+            mutate(across(logLik:Brier, \(x) round(x, 4)),
+                   n = 1:n()) |> 
+            ## Only include top 10
+            ## Always include null model as well
+            filter(n <= 10 | is.na(exponent)) |> 
+            select(-n),
+          here::here("./data/model_accuracy/Fnonprimirepro.csv"), row.names = FALSE)
+```
 
 #### Plot
 
+Probit model creates larger difference between top females and others in DD effects.
+
 ```{r}
-best1y  <- fit_exp(x = 0.39, model = F_repro_nonprimi_mod_yr$logit, data = model_data$F_repro_nonprimi, verbose = FALSE)
+## Best model based on log-likelihood
+best_logLik  <- fit_exp(x = best_fit_Fnonprimi$data$exponent[best_fit_Fnonprimi$data$logLik == max(best_fit_Fnonprimi$data$logLik)],
+                        model = F_repro_nonprimi_mod_logit,
+                        train_data = train_data_Fnonprimi, verbose = FALSE)
+## Best logit model based on Brier score
+best_Brier  <- fit_exp(x = best_fit_Fnonprimi$data$exponent[best_fit_Fnonprimi$data$Brier == min(best_fit_Fnonprimi$data$Brier)],
+                       model = F_repro_nonprimi_mod_logit,
+                       train_data = train_data_Fnonprimi, verbose = FALSE)
+## Best probit model based on Brier score
+best_probit <- fit_exp(x = probit_fit_Fnonprimi$data$exponent[probit_fit_Fnonprimi$data$Brier == min(probit_fit_Fnonprimi$data$Brier)],
+                       model = probit_mod_Fnonprimi,
+                       train_data = train_data_Fnonprimi, verbose = FALSE)
+## Best model based on log loss function
+best_logLoss  <- fit_exp(x = best_fit_Fnonprimi$data$exponent[best_fit_Fnonprimi$data$logLoss == min(best_fit_Fnonprimi$data$logLoss)],
+                         model = F_repro_nonprimi_mod_logit,
+                         train_data = train_data_Fnonprimi, verbose = FALSE)
+## Model with no exponent
+noexp  <- fit_exp(x = 1, model = F_repro_nonprimi_mod_logit,
+                  train_data = train_data_Fnonprimi, verbose = FALSE)
 
 plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all = 1,
                          rank_category2 = c("top", "middle", "bottom"), age = 120, months = 12) %>% 
-  mutate(pred1y = as.numeric(predict(F_repro_nonprimi_mod_yr$logit, newdata = ., type = "response", re.form = NA)),
-         pred1y_best = as.numeric(predict(best1y, newdata = ., type = "response", re.form = NA)),
-         pred1y_probit = as.numeric(predict(F_repro_nonprimi_mod_yr$probit, newdata = ., type = "response", re.form = NA))) %>% 
-  tidyr::pivot_longer(starts_with("pred"))
+  mutate(`Predict (logLik)` = as.numeric(predict(best_logLik, newdata = ., type = "response", re.form = NA)),
+         `Predict (Brier)` = as.numeric(predict(best_Brier, newdata = ., type = "response", re.form = NA)),
+         `Predict (best_logLoss)` = as.numeric(predict(best_logLoss, newdata = ., type = "response", re.form = NA)),
+         `Predict (probit)` = as.numeric(predict(best_probit, newdata = ., type = "response", re.form = NA)),
+         `Predict (No exponent)` = as.numeric(predict(noexp, newdata = ., type = "response", re.form = NA)),
+         `Predict (Null)` = as.numeric(predict(null_mod, newdata = ., type = "response", re.form = NA))) %>% 
+  tidyr::pivot_longer(starts_with("Pred"))
 
-ggplot(data = plot_data)+
+ggplot(data = plot_data) +
   geom_line(aes(x = clan_size, y = value, colour = rank_category2)) +
-  facet_wrap(facets = ~name, scales = "free_y")
+  facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
 ```
-
-Logit with no exponent.
 
 ### Twinning
 
 ```{r}
-twin_mod_yr <- compare_linkfn(twin ~ poly(age, 2)*rank_category2 +
-                                after1y_effort_all +
-                                clan_size*rank_category2 +
-                                start_clan + (1|start_clan:year),
-                              data = model_data$F_twin_data,
-                              method = "PQL/L")
+set.seed(10)
+whole_data_twin <- model_data$F_twin_data |> 
+  ## Filter out not full years
+  dplyr::filter(year <= end_yr) |> 
+  ## Add rank category (top, middle, bottom)
+  dplyr::mutate(rank_category2 = case_when(nat_rank_std >= 1/3 ~ "top",
+                                           nat_rank_std < -1/3 ~ "bottom",
+                                           TRUE ~ "middle")) |> 
+  dplyr::select(twin, year, rank_category2, age, clan_size, start_clan, after1y_effort_all)
+
+test_sample <- sample(1:nrow(whole_data_twin), size = as.integer(nrow(whole_data_twin)*0.05), replace = FALSE)
+
+train_data_twin <- whole_data_twin[-test_sample, ]
+test_data_twin  <- whole_data_twin[test_sample, ] |> 
+  rename(event = twin)
 ```
 
-Probit/logit are identical...stick with logit.
-
-Use likelihood profiling to pick best exponent value.
+In original tests, we found that the full (large) model with interactive effects of age and clan was not better than null! Here, we've considered a simplified model that contains our minimum expected effects: clan size (i.e. density dependence) and social rank.
 
 ```{r}
-output <- exp_profiling(c(-3, -2.5, -2, -1.5, -1, -0.5, -0.1, 0.1, 0.5, 1, 2, 3, 4, 5, 6, 7), data = model_data$F_twin_data, model = twin_mod_yr$logit)
-output
+null_mod <- spaMM::fitme(twin ~ after1y_effort_all + (1|start_clan:year),
+                         data = train_data_twin,
+                         method = "PQL/L", family = binomial(link = "logit"))
+
+twin_mod_logit <- spaMM::fitme(twin ~ clan_size + rank_category2 + after1y_effort_all + (1|start_clan:year),
+                               data = train_data_twin,
+                               method = "PQL/L", family = binomial(link = "logit"))
+
+twin_mod_logit_full <- spaMM::fitme(twin ~ age*rank_category2 +
+                                      after1y_effort_all +
+                                      clan_size*rank_category2 +
+                                      start_clan + (1|start_clan:year),
+                                    data = train_data_twin,
+                                    method = "PQL/L", family = binomial(link = "logit"))
 ```
 
-No significant difference. Best is -0.33
+Compare different models and null model based on predictive accuracy.
+
+```{r}
+polynome_mods_twin <- list(null_mod, twin_mod_logit, twin_mod_logit_full)
+polynome_accuracy_twin <- purrr::map2_dfr(.x = polynome_mods_twin, .y = c("null", "simplemod", "fullmod"), .f = est_accuracy,
+                                          test_data = test_data_twin)
+polynome_accuracy_twin |> 
+  arrange(Brier)
+```
+.2053760
+Model with age and density dependence actually has no difference to predictive accuracy (either w/ log loss or Brier score).
+
+Fit different exponents and compare to null model
+
+```{r}
+best_fit_twin <- exp_profiling(exp = seq(0.1, 2, 0.1),
+                               twin_mod_logit, train_data_twin, test_data_twin)
+best_fit_twin$plot
+```
+
+```{r}
+est_accuracy(null_mod, test_data_twin, name = "null") |> 
+  dplyr::bind_rows(best_fit_twin$data) |> 
+  arrange(Brier)
+```
+
+Check if changing link fn helps predictive fit.
+
+```{r, echo = FALSE}
+probit_mod_twin <- update(twin_mod_logit, family = binomial(link = "probit"))
+probit_fit_twin <- exp_profiling(exp = seq(0.1, 2, 0.1), probit_mod_twin, train_data_twin, test_data_twin)
+probit_fit_twin$plot
+```
+
+```{r}
+output_table <- best_fit_twin$data |> 
+  mutate(link = "logit") |> 
+  bind_rows(probit_fit_twin$data |> 
+              mutate(link = "probit")) |> 
+  bind_rows(est_accuracy(null_mod, test_data_twin, name = "null") |> 
+              mutate(link = "logit")) |> 
+  ## Arrange nicely
+  select(link, exponent, Brier, logLoss, logLik) |> 
+  dplyr::arrange(Brier)
+output_table
+```
+
+Probit model with 0.8 exponent is best.
+
+```{r}
+##Save output to include in supp material
+write.csv(output_table |> 
+            mutate(across(logLik:Brier, \(x) round(x, 4)),
+                   n = 1:n()) |> 
+            ## Only include top 10
+            ## Always include null model as well
+            filter(n <= 10 | is.na(exponent)) |> 
+            select(-n),
+          here::here("./data/model_accuracy/twin.csv"), row.names = FALSE)
+```
 
 #### Plot
 
-```{r}
+Probit model predicts slightly stronger DD effects.
 
-best1y  <- fit_exp(x = -0.33, model = twin_mod_yr$logit, data = model_data$F_twin_data, verbose = FALSE)
+```{r}
+## Best model based on log-likelihood
+best_logLik  <- fit_exp(x = best_fit_twin$data$exponent[best_fit_twin$data$logLik == max(best_fit_twin$data$logLik)],
+                        model = twin_mod_logit,
+                        train_data = train_data_twin, verbose = FALSE)
+## Best logit model based on Brier score
+best_Brier  <- fit_exp(x = best_fit_twin$data$exponent[best_fit_twin$data$Brier == min(best_fit_twin$data$Brier)],
+                       # best_fit_twin$data$exponent[best_fit_twin$data$Brier == min(best_fit_twin$data$Brier)],
+                       model = twin_mod_logit,
+                       train_data = train_data_twin, verbose = FALSE)
+## Best probit model based on Brier score
+best_probit <- fit_exp(x = probit_fit_twin$data$exponent[probit_fit_twin$data$Brier == min(probit_fit_twin$data$Brier)],
+                       model = probit_mod_twin,
+                       train_data = train_data_twin, verbose = FALSE)
+## Best model based on log loss function
+best_logLoss  <- fit_exp(x = best_fit_twin$data$exponent[best_fit_twin$data$logLoss == min(best_fit_twin$data$logLoss)],
+                         model = twin_mod_logit,
+                         train_data = train_data_twin, verbose = FALSE)
+## Model with no exponent
+noexp  <- fit_exp(x = 1,
+                  model = twin_mod_logit,
+                  train_data = train_data_twin, verbose = FALSE)
 
 plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all = 1,
                          rank_category2 = c("top", "middle", "bottom"), age = 120, months = 12) %>% 
-  mutate(pred1y = as.numeric(predict(twin_mod_yr$logit, newdata = ., type = "response", re.form = NA)),
-         pred1y_best = as.numeric(predict(best1y, newdata = ., type = "response", re.form = NA)),
-         pred1y_probit = as.numeric(predict(twin_mod_yr$probit, newdata = ., type = "response", re.form = NA))) %>% 
-  tidyr::pivot_longer(starts_with("pred"))
+  mutate(`Predict (logLik)` = as.numeric(predict(best_logLik, newdata = ., type = "response", re.form = NA)),
+         `Predict (Brier)` = as.numeric(predict(best_Brier, newdata = ., type = "response", re.form = NA)),
+         `Predict (best_logLoss)` = as.numeric(predict(best_logLoss, newdata = ., type = "response", re.form = NA)),
+         `Predict (probit)` = as.numeric(predict(best_probit, newdata = ., type = "response", re.form = NA)),
+         `Predict (No exponent)` = as.numeric(predict(noexp, newdata = ., type = "response", re.form = NA))) %>% 
+  tidyr::pivot_longer(starts_with("Pred"))
 
-ggplot(data = plot_data)+
+ggplot(data = plot_data) +
   geom_line(aes(x = clan_size, y = value, colour = rank_category2)) +
-  facet_wrap(facets = ~name)
+  facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
 ```
 
-Stick with logit with no exponent...
-
-# OLD CODE
+## Save best models
 
 ```{r}
-## Can add "cloglog" and "cauchit" to linkfn if you want, but this can struggle to converge
-compare_linkfn <- function(formula, ..., linkfn = c("logit", "probit")) {
-  
-  all_mods <- lapply(linkfn, FUN = \(link){
-    spaMM::fitme(formula, ..., family = binomial(link = link))
-  })
-  names(all_mods) <- linkfn
-  
-  AICs <- data.frame(linkfn = linkfn,
-                     AIC = sapply(all_mods, FUN = \(mod){
-                       AIC(mod, verbose = FALSE)[1]
-                     })) %>% 
-    dplyr::arrange(AIC)
-  
-  print(AICs)
-  return(all_mods)
-}
+top_models <- list(
+  # F survival: logit, exponent 1, age polynome 2
+  Fsurv = fit_exp(x = best_fit_Fsurv$data$exponent[best_fit_Fsurv$data$Brier == min(best_fit_Fsurv$data$Brier)],
+                       model = F_surv_mod_logit_poly2,
+                       train_data = train_data_Fsurv, verbose = FALSE),
+  # M pre-dispersal: probit, exponent 1, age polynome 2
+  PreMsurv = fit_exp(x = probit_fit_PreMsurv$data$exponent[probit_fit_PreMsurv$data$Brier == min(probit_fit_PreMsurv$data$Brier)],
+                       model = probit_mod_PreMsurv,
+                       train_data = train_data_PreMsurv, verbose = FALSE),
+  # M post-dispersal: logit, exponent 1.4, age polynome 2
+  PostMsurv = fit_exp(x = best_fit_PostMsurv$data$exponent[best_fit_PostMsurv$data$Brier == min(best_fit_PostMsurv$data$Brier)],
+                       model = PostM_surv_mod_logit_poly2,
+                       train_data = train_data_PostMsurv, verbose = FALSE),
+  # F primi repro: Probit, exponent 1 (atan fn for month)
+  Fprimi = fit_exp(x = probit_fit_Fprimi$data$exponent[probit_fit_Fprimi$data$Brier == min(probit_fit_Fprimi$data$Brier)],
+                       model = probit_mod_Fprimi,
+                       train_data = train_data_Fprimi, verbose = FALSE),
+  # F non-primi repro: Logit, exponent 1 (atan fn for month)
+  Fnonprimi = fit_exp(x = best_fit_Fnonprimi$data$exponent[best_fit_Fnonprimi$data$Brier == min(best_fit_Fnonprimi$data$Brier)],
+                       model = F_repro_nonprimi_mod_logit,
+                       train_data = train_data_Fnonprimi, verbose = FALSE),
+  # Twin: probit, exponent 0.8
+  twin = fit_exp(x = probit_fit_twin$data$exponent[probit_fit_twin$data$Brier == min(probit_fit_twin$data$Brier)],
+                       model = probit_mod_twin,
+                       train_data = train_data_twin, verbose = FALSE)
+  )
+
+saveRDS(top_models, here::here("./data/best_models.RDS"))
 ```
 
-Carry out likelihood profiling with different exponent values
 
-```{r}
-exp_profiling <- function(exp, data, model, optimize = TRUE, metric = "logLik", test_data, ...){
-  
-  if (metric == "logLik"){
-    pb <- progress::progress_bar$new(total = length(exp))
-    manual_loglik_opt <- sapply(exp, FUN = exp_estimation, data = data, model = model, pb = pb, verbose = FALSE)
-    plot_data <- data.frame(exp = exp,
-                            loglik = manual_loglik_opt)
-    
-    ## Include this if model struggles to optimize
-    if (optimize) {
-      algo_loglik_optim <- optimize(exp_estimation, lower = min(exp), upper = max(exp), data = data, model = model, verbose = FALSE,
-                                    maximum = TRUE, ...) 
-    } else {
-      algo_loglik_optim <- list()
-      algo_loglik_optim$objective <- max(plot_data$loglik)
-      algo_loglik_optim$maximum <- plot_data$exp[plot_data$loglik == max(plot_data$loglik)]
-    }
-    
-    loglik_1    <- exp_estimation(x = 1, data = data, model = model, verbose = FALSE)
-    loglik_best <- exp_estimation(x = algo_loglik_optim$maximum, data = data, model = model, verbose = FALSE)
-    
-    pval <- pchisq(-2 * (loglik_1 - loglik_best), df = 1, lower.tail = FALSE)
-    
-    return(list(optim = algo_loglik_optim,
-                data = plot_data,
-                plot = ggplot(data = plot_data) +
-                  geom_hline(yintercept = algo_loglik_optim$objective - qchisq(p = 0.95, df = 1)/2,
-                             lty = 2) +
-                  geom_line(aes(x = exp, y = loglik)) +
-                  geom_point(aes(x = exp, y = loglik)) +
-                  geom_point(aes(x = algo_loglik_optim$maximum, y = loglik_best),
-                             size = 3, colour = "red") +
-                  scale_x_continuous(limits = c(min(exp), max(exp)),
-                                     breaks = seq(min(exp), max(exp), 1)) +
-                  labs(title = paste("P-value difference between exp=1 and best exponent", round(algo_loglik_optim$maximum, 2), ":\n", round(pval, digits = 2), sep = " ")) +
-                  theme_bw()))
-    
-  } else if(metric == "Brier"){
-    
-    pb <- progress::progress_bar$new(total = length(exp))
-    manual_Brier_opt <- sapply(exp, FUN = exp_estimation, data = data, model = model, pb = pb, verbose = FALSE, metric = "Brier", test_data = test_data)
-    plot_data <- data.frame(exp = exp,
-                            Brier = manual_Brier_opt)
-    
-    ## Include this if model struggles to optimize
-    if (optimize) {
-      algo_Brier_optim <- optimize(exp_estimation, lower = min(exp), upper = max(exp), data = data, model = model, verbose = FALSE,
-                                   metric = "Brier", test_data = test_data,
-                                   maximum = FALSE, ...) 
-    } else {
-      algo_Brier_optim <- list()
-      algo_Brier_optim$objective <- min(plot_data$Brier)
-      ## Because we round our Brier scores, we can get multiple matches
-      algo_Brier_optim$minimise <- plot_data$exp[plot_data$Brier == min(plot_data$Brier)]
-    }
-    
-    Brier_best <- exp_estimation(x = algo_Brier_optim$minimise, data = data, model = model, verbose = FALSE, metric = "Brier", test_data = test_data)
-    
-    return(list(optim = algo_Brier_optim, 
-                data = plot_data,
-                plot = ggplot(data = plot_data) +
-                  # geom_hline(yintercept = algo_loglik_optim$objective - qchisq(p = 0.95, df = 1)/2,
-                  #            lty = 2) +
-                  geom_line(aes(x = exp, y = Brier)) +
-                  geom_point(aes(x = exp, y = Brier)) +
-                  geom_point(aes(x = algo_Brier_optim$minimise, y = Brier_best),
-                             size = 3, colour = "red") +
-                  scale_x_continuous(limits = c(min(exp), max(exp)),
-                                     breaks = seq(min(exp), max(exp), 1)) +
-                  theme_bw()))
-    
-  }
-  
-}
-```
