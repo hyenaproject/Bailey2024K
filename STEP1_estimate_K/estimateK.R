@@ -23,7 +23,7 @@ start_yr <- 1997 # We ignore 1996 because majority are left censored individuals
 end_yr   <- 2023 # Technically we can use data from early 2022, but not enough samples for year RE
 
 ## GENERATED IN STEP0_prepare_data/01_fit_VR_models.Rmd
-modlist <- readRDS(here::here("./data/best_models.RDS"))
+modlist <- readRDS(here::here("./data/model_list.RDS"))
 
 # Take the start pop 1996 and increase it to different sizes
 ## GENERATED IN STEP0_prepare_data/starting_population.R
