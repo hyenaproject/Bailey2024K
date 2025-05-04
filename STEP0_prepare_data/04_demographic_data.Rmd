@@ -122,17 +122,17 @@ if (!file.exists(here::here("./data/NClanplot_data_year.RDS"))) {
 
 ### Age and (adult) sex ratio
 
-Calculate number of individuals in each of three groups: adult female, adult male, juvenile. This is for supplementary data and doesn't need to be aggregated up to annual value. We calculate at month scale (rather than on a single date) to be consistent with our above steps.
+Calculate number of individuals in each of three groups: adult female, adult male, juvenile. This is for supplementary data and doesn't need to be aggregated up to annual value. We calculate a snapshot every 6mo.
 
 ```{r}
 ## Calculate monthly output (if not already saved)
-if (!file.exists(here::here("./data/Nplot_data_separate_1month.RDS"))) {
+if (!file.exists(here::here("./data/Nplot_data_separate_6month.RDS"))) {
   
   hyenaR::load_package_database.full(db.path)
   
   ## Exclude first few months of 2024 just to make it easier to describe breaks
   ## Extract ALL data here, but not all is used to fit models
-  real_pop_separate <- dplyr::tibble(date = seq(as.Date("1996-05-01"), as.Date("2025-01-01"), by = "1 month")) %>%
+  real_pop_separate <- dplyr::tibble(date = seq(as.Date("1996-07-01"), as.Date("2025-01-01"), by = "6 month")) %>%
     dplyr::mutate(young = hyenaR::fetch_pop_number(main.clans = TRUE, from = .data$date, to = lead(.data$date),
                                                    CPUcores = cores_used, .parallel.min = 50,
                                                    lifestage = "!adult"),
@@ -144,6 +144,6 @@ if (!file.exists(here::here("./data/Nplot_data_separate_1month.RDS"))) {
                                                     lifestage = "adult", sex = "female")
     )
   
-  saveRDS(real_pop_separate, file = here::here("./data/Nplot_data_separate_1month.RDS"))
+  saveRDS(real_pop_separate, file = here::here("./data/Nplot_data_separate_6month.RDS"))
 }
 ```
