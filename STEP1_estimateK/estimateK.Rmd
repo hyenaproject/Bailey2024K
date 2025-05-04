@@ -1,0 +1,257 @@
+---
+title: "EstimateK"
+author: "Liam D. Bailey"
+date: "2025-05-04"
+output: html_document
+---
+
+Once we've run simulations, how do we define a simulation as stable and define K?
+
+## Setup workspace
+
+### Load packages
+
+```{r}
+library(dplyr)
+library(ggplot2)
+```
+
+### Define years where we will calculate K
+
+We exclude 1996 because we only have half a year of data. We exclude 2023 to have data where we can test predictive accuracy. 2024 is not used because we don't have enough observations (i.e. >1y) to accurately determine vital rates.
+
+```{r}
+## Set a starting year. Filter out everything before this
+start_yr <- 1997 # We ignore 1996 because majority are left censored individuals
+end_yr <- 2022 ## We want to also run for 2023, but hasn't been done yet
+# end_yr   <- 2023 # We also have data from early 2024, but not enough samples for year RE
+```
+
+## Estimate K
+
+### Extract model data
+
+```{r}
+all_data <- purrr::map_df(.x = start_yr:end_yr, .f = function(sim_year, folder_name){
+  
+  txt_files <- list.files(here::here(paste0("./STEP1_estimateK/", sim_year)),
+                          pattern = ".txt", full.names = TRUE)
+  
+  allsims <- purrr::map_df(.x = txt_files,
+                           .f = function(filepath){
+                             
+                             readr::read_delim(filepath, show_col_types = FALSE, lazy = FALSE) |> 
+                               dplyr::mutate(sim = stringr::str_extract(filepath, "(?<=_)[0-9]+(?=.txt)"))
+                             
+                           }) |> 
+    mutate(sim_year = sim_year)
+  
+  allsims
+  
+})
+
+all_data_select <- all_data |> 
+  select(sim_year, date, pop_size, sim)
+```
+
+### Calculate variance removing time steps
+
+Remove data until we reach a variance below X (X is arbitrary...)
+
+```{r}
+## Try and example for sim 1
+burnin_allyrs <- purrr::map_df(.x = start_yr:end_yr, .f = \(focal_year){
+  
+  allsims <- all_data_select |> 
+    filter(sim_year == focal_year)
+  
+  purrr::map_df(.x = 1:10, \(sim_nr){
+    
+    simN <- allsims |> 
+      filter(sim == sim_nr)
+    
+    ## Loop through removing 1 month at a time
+    simN_var <- purrr::map_dfr(.x = 1:(nrow(simN) - 1), \(x){
+      
+      data.frame(sim = sim_nr, x = x,
+                 var = var(simN$pop_size[x:nrow(simN)]))
+      
+    }) |> 
+      mutate(sim_year = focal_year)
+    
+    ## Also calculate slope
+    simN_var$slope <- c(purrr::map_dbl(.x = 1:(nrow(simN_var) - 1), \(i){
+      
+      diff(simN_var$var[i:(i+1)])
+      
+    }), NA)
+    
+    simN_var$pop_slope <- c(purrr::map_dbl(.x = 1:(nrow(simN_var) - 1), \(i){
+      
+      diff(simN$pop_size[i:(i+1)])
+      
+    }), NA)
+    
+    return(simN_var)
+    
+  })
+  
+})
+```
+
+```{r}
+ggplot() +
+  geom_line(data = burnin_allyrs,
+            aes(x = x, y = var, group = sim), linewidth = 0.1) +
+  facet_wrap(facets = ~sim_year)
+```
+
+```{r}
+ggplot() +
+  geom_line(data = burnin_allyrs,
+            aes(x = x, y = slope, group = sim), linewidth = 0.1) +
+  facet_wrap(facets = ~sim_year)
+```
+
+Our approach:
+
+- In all simulations, population size increased from starting population (equivalent to status in 1997)
+- We removed steps from each simulation to reduce variance in population size
+- Each simulation was considered 'stable' once removing steps no longer decreased variance AND absolute variance was below 750.
+
+Apply our approach below:
+
+```{r}
+stable_sims <- burnin_allyrs |> 
+  group_by(sim, sim_year) |> 
+  filter(x >= min(which(slope > 0)) & x >= min(which(var <= 750))) |> 
+  slice(1) |> 
+  ungroup() |> 
+  arrange(sim_year, sim)
+
+stable_sims
+```
+
+```{r}
+range(stable_sims$x)
+```
+
+How quickly did sims converge?
+
+```{r}
+plot_data <- stable_sims |> 
+  mutate(years_converge = x/12)
+
+converge_hist <- ggplot() +
+  geom_histogram(data = plot_data,
+                 aes(x = years_converge), binwidth = 1,
+                 colour = "black", fill = "grey80") +
+  geom_vline(xintercept = median(plot_data$years_converge), lty = 2) +
+  geom_text(aes(x = median(plot_data$years_converge) + 1,
+                y = 55, label = paste0("Median: ", median(plot_data$years_converge), " years")),
+            hjust = 0) +
+  ## X TICKS
+  annotate(geom = "segment",
+           x = seq(0, 70, by = 2),
+           xend = seq(0, 70, by = 2),
+           y = -0.5, yend = 0,
+           lineend = "round", linejoin = "round") +
+  annotate(geom = "segment",
+           x = seq(0, 70, by = 10),
+           xend = seq(0, 70, by = 10),
+           y = -1, yend = 0,
+           lineend = "round", linejoin = "round") +
+  scale_x_continuous(breaks = seq(0, 100, 10),
+                     name = "Time until equilibrium (years)")  +
+  scale_y_continuous(name = "Number of simulations")  +
+  coord_cartesian(expand = FALSE, clip = "off",
+                  ylim = c(0, 60),
+                  xlim = c(0, 70)) +
+  theme_classic() +
+  theme(legend.position = "right",
+        axis.text.x = element_text(colour = "black",
+                                   margin = margin(t = 10), size = 10),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_text(colour = "black", size = 10, margin = margin(r = 5)),
+        axis.title = element_text(colour = "black", size = 12, margin = margin(r = 12)),
+        plot.margin = margin(r = 30, t = 10, b = 10),
+        strip.text = element_text(size = 20, colour = "black"),
+        strip.background = element_rect(colour = "grey80"))
+
+ggplot2::ggsave(plot = converge_hist, here::here("./plots/sim_outputs/convergence_histogram.png"),
+                height = 7, width = 8, dpi = 300)
+```
+
+How many years of data does this give us? In all but 3 sims, we end up with >67 years of data. Do we want to run these other sims longer?
+
+```{r}
+plot_data <- stable_sims |> 
+  mutate(years_data = (1200-x)/12)
+
+ggplot() +
+  geom_histogram(data = plot_data,
+                 aes(x = years_data), binwidth = 1) +
+  scale_x_continuous(breaks = seq(30, 100, 10))
+```
+
+What does Kt look like using this method?
+
+```{r}
+stable_data <- all_data_select |> 
+  group_by(sim, sim_year) |> 
+  mutate(x = 1:n(), sim = as.integer(sim)) |> 
+  select(sim, sim_year, x, pop_size) |> 
+  ungroup() |> 
+  left_join(stable_sims |> 
+              select(sim, sim_year, burnin = x),
+            by = c("sim", "sim_year")) |> 
+  filter(x >= burnin)
+
+KtN_calc <- stable_data |> 
+  group_by(sim, sim_year) |> 
+  summarise(KtN = median(pop_size), .groups = "drop")
+
+Kt_calc <- KtN_calc |> 
+  group_by(sim_year) |> 
+  summarise(globalK = median(KtN),
+            lower = min(KtN),
+            upper = max(KtN),
+            points = list(data.frame(pop_size = KtN))) |> 
+  rename(year = sim_year)
+
+saveRDS(Kt_calc, here::here("./data/Kplot_data.RDS"))
+```
+
+Compare to our previous hard cut-off method
+
+```{r}
+## Old data
+Kplot_data <- readRDS(here::here("./data/Kplot_data_old.RDS"))
+
+ggplot() +
+  geom_errorbar(data = Kplot_data,
+                aes(x = year, ymin = lower, ymax = upper),
+                width = 0) +
+  geom_point(data = Kplot_data,
+             aes(x = year, y = globalK)) +
+  geom_errorbar(data = Kt_calc,
+                aes(x = year + 0.25, ymin = lower, ymax = upper),
+                width = 0, colour = "blue") +
+  geom_point(data = Kt_calc,
+             aes(x = year + 0.25, y = globalK),
+             colour = "blue")
+```
+
+When we have defined something as 'at equilibrium' how much do time steps vary from this Kt value?
+
+```{r}
+divergence <- stable_data |> 
+  left_join(KtN_calc, by = c("sim", "sim_year")) |> 
+  mutate(diff = pop_size - KtN,
+         abs_diff = abs(diff)) |> 
+  ## What % are within 30 individuals?
+  summarise(in30 = sum(abs_diff <= 30),
+            perc_in30 = in30/n())
+
+divergence
+```
