@@ -417,7 +417,7 @@ mechanistic_data &lt;- read.csv(here::here(&quot;./data/mechanistic_model_data.c
                                 
                                 pb_yr$tick()
                                 
-                                txt_files &lt;- list.files(here(paste0(&quot;./STEP1_estimate_K/&quot;, year)),
+                                txt_files &lt;- list.files(here(paste0(&quot;./STEP1_estimateK/&quot;, year)),
                                                         pattern = &quot;.txt&quot;, full.names = TRUE)
                                 
                                 allsims &lt;- purrr::map_df(.x = txt_files,

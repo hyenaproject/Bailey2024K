@@ -47,7 +47,7 @@ The folder `STEP0_prepare_data` includes:
 
 These data are used throughout further analyses.
 
-## STEP1_estimate_K
+## STEP1_estimateK
 
 Code used to estimate time varying carrying capacity of spotted hyenas in Ngorongoro Crater using the Spotted Hyena Individual-based Model (SHIM).
 These are the key results of the publication and are used for most further analysis and plotting. There are two key files:

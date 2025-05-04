@@ -47,7 +47,7 @@ if (!file.exists(here::here("./data/Kplot_data.RDS"))) {
                                 
                                 pb_yr$tick()
                                 
-                                txt_files <- list.files(here(paste0("./STEP1_estimate_K/", year)),
+                                txt_files <- list.files(here(paste0("./STEP1_estimateK/", year)),
                                                         pattern = ".txt", full.names = TRUE)
                                 
                                 allsims <- purrr::map_df(.x = txt_files,
