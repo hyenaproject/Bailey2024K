@@ -26,7 +26,7 @@ Define which simulation type we're using
 ```{r params}
 #Model 2 (polynomial age and random effect of year nested within clan)
 #Simulations have a variety of start points to reduce initialization bias
-folder_name <- "STEP1_estimate_K"
+folder_name <- "STEP1_estimateK"
 db.path     <- here::here("../hyena_data/Fisidata_08_08_2022.sqlite")
 start_year  <- 1997
 ```

@@ -384,7 +384,7 @@ end_year &lt;- 2022
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
 model_data &lt;- readRDS(here::here(&quot;./data/model_data.RDS&quot;))</code></pre>
 <pre class="r"><code>Kplot_data &lt;- readRDS(here::here(&quot;./data/Kplot_data.RDS&quot;))</code></pre>
-<pre class="r"><code>folder_name &lt;- here::here(&quot;./STEP1_estimate_K/elasticity_oddsratio&quot;)
+<pre class="r"><code>folder_name &lt;- here::here(&quot;./STEP1_estimateK/elasticity_oddsratio&quot;)
 all_folders &lt;- list.dirs(folder_name, recursive = FALSE)
 
 all_variables &lt;- purrr::map_df(.x = all_folders,

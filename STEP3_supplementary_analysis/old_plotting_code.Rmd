@@ -22,7 +22,7 @@ Define which simulation type we're using
 
 #Model 2 (polynomial age and random effect of year nested within clan)
 #Simulations have a variety of start points to reduce initialization bias
-folder_name <- "STEP1_estimate_K"
+folder_name <- "STEP1_estimateK"
 db.path     <- "../hyena_data/Fisidata_2022_08_08.sqlite"
 start_year  <- 1997
 ```

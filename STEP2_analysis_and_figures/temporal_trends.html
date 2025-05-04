@@ -418,7 +418,7 @@ if (!file.exists(here::here(&quot;./data/Kplot_data.RDS&quot;))) {
                                 
                                 pb_yr$tick()
                                 
-                                txt_files &lt;- list.files(here(paste0(&quot;./STEP1_estimate_K/&quot;, year)),
+                                txt_files &lt;- list.files(here(paste0(&quot;./STEP1_estimateK/&quot;, year)),
                                                         pattern = &quot;.txt&quot;, full.names = TRUE)
                                 
                                 allsims &lt;- purrr::map_df(.x = txt_files,
@@ -800,7 +800,7 @@ LRT(global_mod, null_mod)</code></pre>
                                 
                                 pb_yr$tick()
                                 
-                                txt_files &lt;- list.files(here(paste0(&quot;~/data/simulation_results/analysis/STEP1_estimate_K/&quot;, year)),
+                                txt_files &lt;- list.files(here(paste0(&quot;~/data/simulation_results/analysis/STEP1_estimateK/&quot;, year)),
                                                         pattern = &quot;.txt&quot;, full.names = TRUE)
                                 
                                 allsims &lt;- purrr::map_df(.x = txt_files,

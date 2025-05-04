@@ -209,7 +209,7 @@ ggplot(data = plot_data_bars) +
 years <- 1997:2022
 facet_data <- purrr::map_df(.x = years, .f = function(sim_year, folder_name){
   
-  txt_files <- list.files(here::here(paste0("./STEP1_estimate_K/", sim_year)),
+  txt_files <- list.files(here::here(paste0("./STEP1_estimateK/", sim_year)),
                           pattern = ".txt", full.names = TRUE)
   
   allsims <- purrr::map_df(.x = txt_files,
@@ -360,7 +360,7 @@ library(ggplot2)
 years <- 1997:2022
 all_data <- purrr::map_df(.x = years, .f = function(sim_year, folder_name){
   
-  txt_files <- list.files(here::here(paste0("./STEP1_estimate_K/", sim_year)),
+  txt_files <- list.files(here::here(paste0("./STEP1_estimateK/", sim_year)),
                           pattern = ".txt", full.names = TRUE)
   
   allsims <- purrr::map_df(.x = txt_files,
@@ -744,7 +744,7 @@ Bolstad2::GelmanRubin(theta)
 Included two new runs that go for even longer....
 
 ```{r}
-txt_files <- list.files(here::here(paste0("./STEP1_estimate_K")),
+txt_files <- list.files(here::here(paste0("./STEP1_estimateK")),
                         pattern = ".txt", full.names = TRUE)
 
 allsims_long <- purrr::map_df(.x = txt_files,
@@ -841,7 +841,7 @@ Would we expect results to be any better if we run simulations for longer?
 
 ```{r}
 year <- 1997
-txt_files <- list.files(here::here(paste0("./STEP1_estimate_K")),
+txt_files <- list.files(here::here(paste0("./STEP1_estimateK")),
                         pattern = ".txt", full.names = TRUE)
 
 allsims_long <- purrr::map_df(.x = txt_files,

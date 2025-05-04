@@ -17,7 +17,7 @@ library(here)
 ## Load files
 
 ```{r}
-dir <- here::here("./STEP1_estimate_K/2001")
+dir <- here::here("./STEP1_estimateK/2001")
 
 files <- list.files(dir, pattern = ".txt", full.names = TRUE)
 

@@ -24,7 +24,7 @@ Kplot_data <- readRDS(here::here("./data/Kplot_data.RDS"))
 ```
 
 ```{r}
-folder_name <- here::here("./STEP1_estimate_K/elasticity_oddsratio")
+folder_name <- here::here("./STEP1_estimateK/elasticity_oddsratio")
 all_folders <- list.dirs(folder_name, recursive = FALSE)
 
 all_variables <- purrr::map_df(.x = all_folders,

@@ -25,7 +25,7 @@ end_year <- 2022
 ## GENERATED IN STEP0_prepare_data/model_fit.Rmd
 model_data <- readRDS(here::here("./data/model_data.RDS"))
 
-## GENERATED IN STEP1_estimate_K/estimateK.R
+## GENERATED IN STEP1_estimateK/estimateK.R
 modlist <- readRDS(here::here("./data/model_list.RDS"))
 ```
 

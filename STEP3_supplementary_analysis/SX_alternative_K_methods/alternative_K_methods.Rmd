@@ -1376,7 +1376,7 @@ all_fitted_data$optK/median(Kplot_data$globalK)
 ## Extract marginal values
 
 ```{r}
-folder <- here::here("./STEP1_estimate_K/marginal")
+folder <- here::here("./STEP1_estimateK/marginal")
 all_files <- list.files(folder, pattern = ".txt", full.names = TRUE)
 
 pb_yr <- progress::progress_bar$new(total = length(all_files))

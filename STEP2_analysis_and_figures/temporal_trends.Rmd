@@ -52,7 +52,7 @@ if (!file.exists(here::here("./data/Kplot_data.RDS"))) {
                                 
                                 pb_yr$tick()
                                 
-                                txt_files <- list.files(here(paste0("./STEP1_estimate_K/", year)),
+                                txt_files <- list.files(here(paste0("./STEP1_estimateK/", year)),
                                                         pattern = ".txt", full.names = TRUE)
                                 
                                 allsims <- purrr::map_df(.x = txt_files,
@@ -385,7 +385,7 @@ if (file.exists(here::here("./data/Kplot_clan_data.RDS"))) {
                                 
                                 pb_yr$tick()
                                 
-                                txt_files <- list.files(here(paste0("~/data/simulation_results/analysis/STEP1_estimate_K/", year)),
+                                txt_files <- list.files(here(paste0("~/data/simulation_results/analysis/STEP1_estimateK/", year)),
                                                         pattern = ".txt", full.names = TRUE)
                                 
                                 allsims <- purrr::map_df(.x = txt_files,
