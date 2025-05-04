@@ -52,23 +52,26 @@ These data are used throughout further analyses.
 Code used to estimate time varying carrying capacity of spotted hyenas in Ngorongoro Crater using the Spotted Hyena Individual-based Model (SHIM).
 These are the key results of the publication and are used for most further analysis and plotting. There are two key files:
 
-- `estimateK.R`:
-  - Estimate time varying carrying capacity (Kt) for each year. Outputs saved as `.txt` files in folders for each year.
-  - Estimate stable (non-time varying) carrying capacity that uses marginal predictions within the simulation.
+- `run_simulation.R`:
+  - Run simulations used to estimate Kt for each eyar. Outputs saved as `.txt` files in folders for each year.
+  - Run simulations used to estimate stable (non-time varying) carrying capacity that uses marginal predictions within the simulation.
   Outputs saved as `.txt` files in folder 'marginal'
-- `estimateK_elasticity_oddsratio.R`
-  - Elasticity elasticity of time varying carrying capacity estimates to variation in individual vital rates. Outputs saved as
+- `run_simulation_elasticity_oddsratio.R`
+  - Run simulations to estimate elasticity of time varying carrying capacity estimates to variation in individual vital rates. Outputs saved as
   `.txt` files in folder 'elasticity_oddsratio'.
+- `estimateK.Rmd`:
+  - Estimate Kt from simulation outputs, using burn-ins to only incorporate simulations once at equilibrium.
+  Output saved as `./data/Kplot_data`.
 
 ## STEP2_analysis_and_figures
 
 Use estimated carrying capacity values and raw observational data from Ngorongoro Hyena Project to generate figures and further analyses. Folder includes:
 
-- `fig1_theory_plot.R`
+- `K_theory_plot.R`
     - Generate a plot showing the theory behind time-varying carrying capacity.
-- `fig2_N_and_sexratio.R` 
+- `demographic_plots.R` 
   - Generate a plot showing observed change in population size, sex and age ratio of the population over time.
-- `fig3_NK_v_time.R`
+- `NK_v_time.R`
   - Generate a plot showing observed change in time varying carrying capacity and population size over time.
 - `temporal_trends.Rmd`
   - Estimate rate of change over time in Kt.
@@ -91,7 +94,5 @@ All other plots and analyses not included in the main text.
   - Correlation between K (population) and K (clan) (`corr_Kt_Ktc.R`).
   - Visualisation of density dependence as an emergent property of simulated vital rates (`est_dd.R`).
 - `SX_model_tests`
-- `SX_pattern_oriented_modelling`
-  - Compare patterns of individual-based model with real world data from Ngorongoro Hyena Project.
 - `SX_elasticity`
   - Analyse results of elasticity analysis with simulations.
