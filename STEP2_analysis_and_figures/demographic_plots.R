@@ -129,7 +129,7 @@ plot_data_clan <- real_clan %>%
           plot.margin = margin(r = 30, t = 10, b = 10)))
 
 ggsave(plot = NClan_plot, filename = here::here("./plots/NClan_v_time.png"), dpi = 600,
-       width = 9, height = 5)
+       width = 9, height = 7)
 
 ### Stats ####
 ## Max clan size in a year (maximum monthly clan size)
@@ -299,4 +299,12 @@ plot_data <- model_data |>
         plot.margin = margin(r = 30, t = 10, b = 10)))
 
 ggsave(plot = effort_plot, filename = here::here("./plots/effort_plot.png"), dpi = 600,
-       width = 9, height = 5)
+       width = 9, height = 7)
+
+### Stats ####
+range(plot_data$after1y_effort_mean)
+median(plot_data$after1y_effort_mean)
+sum(plot_data$after1y_effort_max >= 0.75)/nrow(plot_data)
+plot_data |>
+  group_by(start_clan) |>
+  summarise(median = median(after1y_effort_mean))
