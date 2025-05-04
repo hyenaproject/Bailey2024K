@@ -30,9 +30,8 @@ Define which simulation type we're using
 
 ```{r params}
 start_year  <- 1997
-end_year    <- 2022
+end_year    <- 2023
 growth_period_until <- 2011
-scale <- "year"
 ```
 
 # Extract data
@@ -93,25 +92,9 @@ Extract real pop data over time at 1 month and 6mo intervals.
 
 ```{r N_data}
 ### GENERATED IN STEP0_prepare_data/demographic_data.R
-if (scale == "year"){
-  real_pop <- readRDS(here::here("./data/Nplot_data_year.RDS"))
-  real_pop_separate <- readRDS(here::here("./data/Nplot_data_separate_year.RDS"))
-} else if (scale == "month"){
-  real_pop <- readRDS(here::here("./data/Nplot_data_month.RDS")) 
-  real_pop_separate <- readRDS(here::here("./data/Nplot_data_separate_1month.RDS"))
-}
+real_pop <- readRDS(here::here("./data/Nplot_data_year.RDS"))
+real_pop_separate <- readRDS(here::here("./data/Nplot_data_separate_6month.RDS"))
 ```
-
-Prepare sex and age ratio data
-
-```{r N_data_separate}
-### Calculate sex ratio (male/all females)
-ratios <- real_pop_separate %>% 
-  mutate(sex_ratio = ad_male/(ad_male + ad_fem),
-         age_ratio = young/(young + ad_male + ad_fem)) %>% 
-  tidyr::pivot_longer(cols = sex_ratio:age_ratio)
-```
-
 
 # Population abundance (N)
 
@@ -662,6 +645,70 @@ spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameS")
 spaMM::confint.HLfit(K_model_perclan_growthperiod, parm = "year:nameT")
 ```
 
+## Age ratio
+
+Descriptive stats
+
+```{r}
+real_pop_separate %>% 
+  mutate(sexratio = young/(young + ad_male + ad_fem)) %>% 
+  filter(lubridate::year(date) <= end_year) |> 
+  summarise(median = median(sexratio),
+            min = min(sexratio),
+            max = max(sexratio))
+```
+
+### Age ratio mod (binomial)
+
+Do this at every 6 months to be comparable
+
+```{r}
+ageratio_mod <- fitme(cbind(young, ad_male + ad_fem) ~ n, data = ratio_data, family = "binomial")
+```
+
+```{r}
+ageratio_residuals <- DHARMa::simulateResiduals(ageratio_mod, n = 1000, seed = 123)
+plot(ageratio_residuals)
+```
+
+
+```{r}
+testTemporalAutocorrelation(ageratio_residuals, time = 1:nrow(ratio_data))
+```
+
+### Age ratio mod AR1 (binomial)
+
+Do this at every 6 months to be comparable
+
+```{r}
+ageratio_mod2 <- fitme(cbind(young, ad_male + ad_fem) ~ n + AR1(1|n), data = ratio_data, family = "binomial")
+summary(ageratio_mod2)
+```
+
+```{r}
+ageratio2_residuals <- DHARMa::simulateResiduals(ageratio_mod2, n = 1000, seed = 123)
+plot(ageratio2_residuals)
+```
+
+```{r}
+acf(residuals(ageratio_mod2))
+```
+
+```{r}
+global_mod <- fitme(cbind(young, ad_male + ad_fem) ~ n + AR1(1|n), data = ratio_data, family = "binomial")
+null_mod   <- fitme(cbind(young, ad_male + ad_fem) ~ 1 + AR1(1|n), data = ratio_data, family = "binomial")
+
+summary(global_mod)
+```
+```{r}
+## Fails with bootstrap, because we're using cbind?
+LRT(global_mod, null_mod)
+```
+
+```{r}
+confint(global_mod, parm = "n")
+```
+
 ## Sex ratio
 
 Descriptive stats
@@ -731,70 +778,3 @@ LRT(global_mod, null_mod)
 ```{r}
 confint(global_mod, parm = "n")
 ```
-
-## Age ratio
-
-Descriptive stats
-
-```{r}
-real_pop_separate %>% 
-  mutate(sexratio = young/(young + ad_male + ad_fem)) %>% 
-  filter(lubridate::year(date) <= end_year) |> 
-  summarise(median = median(sexratio),
-            min = min(sexratio),
-            max = max(sexratio))
-```
-
-### Age ratio mod (binomial)
-
-Do this at every 6 months to be comparable
-
-```{r}
-ageratio_mod <- fitme(cbind(young, ad_male + ad_fem) ~ n, data = ratio_data, family = "binomial")
-```
-
-```{r}
-ageratio_residuals <- DHARMa::simulateResiduals(ageratio_mod, n = 1000, seed = 123)
-plot(ageratio_residuals)
-```
-
-
-```{r}
-testTemporalAutocorrelation(ageratio_residuals, time = 1:nrow(ratio_data))
-```
-
-### Age ratio mod AR1 (binomial)
-
-Do this at every 6 months to be comparable
-
-```{r}
-ageratio_mod2 <- fitme(cbind(young, ad_male + ad_fem) ~ n + AR1(1|n), data = ratio_data, family = "binomial")
-summary(ageratio_mod2)
-```
-
-```{r}
-ageratio2_residuals <- DHARMa::simulateResiduals(ageratio_mod2, n = 1000, seed = 123)
-## AGE RATIO MODEL IS MUCH BETTER FIT
-plot(ageratio2_residuals)
-```
-
-```{r}
-acf(residuals(ageratio_mod2))
-```
-
-```{r}
-global_mod <- fitme(cbind(young, ad_male + ad_fem) ~ n + AR1(1|n), data = ratio_data, family = "binomial")
-null_mod   <- fitme(cbind(young, ad_male + ad_fem) ~ 1 + AR1(1|n), data = ratio_data, family = "binomial")
-
-summary(global_mod)
-```
-```{r}
-## Fails with bootstrap, because we're using cbind?
-LRT(global_mod, null_mod)
-```
-
-```{r}
-confint(global_mod, parm = "n")
-```
-
-
