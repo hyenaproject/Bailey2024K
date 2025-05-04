@@ -147,3 +147,37 @@ if (!file.exists(here::here("./data/Nplot_data_separate_6month.RDS"))) {
   saveRDS(real_pop_separate, file = here::here("./data/Nplot_data_separate_6month.RDS"))
 }
 ```
+
+### Effort data
+
+Demographic data may be influenced by observation effort. We extract max effort during 1y period after every month/year. This helps us respond to reviewers. Only need it 1997-2024 (to show observation effort in years we estimate K).
+
+```{r}
+max_effort <- dplyr::tibble(start_clan = hyenaR::find_clan_name.all(main.clans = TRUE)) %>%
+      hyenaR::reshape_row_date.seq(.data$start_clan,
+                                   from = "1997-01-01",
+                                   to = "2025-01-01",
+                                   by = "month") %>%
+      dplyr::mutate(from = .data$date,
+                    to = .data$from + (months(1) - lubridate::days(1))) %>%
+      dplyr::select("start_clan", "from", "to") %>%
+      #Determine observation effort in each month for each clan
+      dplyr::mutate(hyenaR::multifetch_clan_obsv.effort(clan = .data$start_clan, from = .data$from, to = .data$to,
+                                                        CPUcores = 8)) %>%
+      #For every clan, return lag and lead columns for every month of lag required
+      dplyr::group_by(.data$start_clan) %>%
+      dplyr::mutate(purrr::map_dfc(.x = 0:12,
+                                   .f = function(month, effort){
+
+                                     dplyr::tibble("lead_{month}" := dplyr::lead(x = effort, n = month))
+
+                                   }, effort = .data$effort_all)) |>  
+  dplyr::mutate(after1y_effort_max = lay::lay(pick(dplyr::starts_with("lead")), max),
+                after1y_effort_mean = lay::lay(pick(dplyr::starts_with("lead")), mean)) |> 
+  select(start_clan, from, to, after1y_effort_mean, after1y_effort_max)
+
+saveRDS(max_effort, file = here::here("./data/effort_data.RDS"))
+```
+
+
+

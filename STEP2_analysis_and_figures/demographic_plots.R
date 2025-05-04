@@ -231,7 +231,6 @@ ratios |>
   filter(ratio_type == "age_ratio") |>
   filter(ratio_val == min(ratio_val) | ratio_val == max(ratio_val))
 
-
 ## Sex ratio
 ratios |>
   filter(ratio_type == "sex_ratio") |>
@@ -240,3 +239,64 @@ ratios |>
   filter(ratio_type == "sex_ratio") |>
   filter(ratio_val == min(ratio_val) | ratio_val == max(ratio_val))
 
+## Observation effort ####
+### Plot ####
+model_data <- readRDS(here::here("./data/effort_data.RDS"))
+
+plot_data <- model_data |>
+  filter(lubridate::year(from) >= start_year & lubridate::year(from) <= end_year) |>
+  ## We have a fn for this in hyenaR, but it still required the database
+  ## This is worth changing, because it should be database dependent
+  mutate(clan_name = case_when(start_clan == "A" ~ "AIRSTRIP",
+                               start_clan == "E" ~ "ENGITATI",
+                               start_clan == "F" ~ "FOREST",
+                               start_clan == "L" ~ "LEMALA",
+                               start_clan == "M" ~ "MUNGE",
+                               start_clan == "N" ~ "NGOITOKITOK",
+                               start_clan == "S" ~ "SHAMBA",
+                               start_clan == "T" ~ "TRIANGLE"))
+
+(effort_plot <- ggplot() +
+  geom_hline(yintercept = seq(0, 1, 0.25), lty = 2, linewidth = 0.1) +
+  geom_line(data = plot_data,
+            aes(x = from, y = after1y_effort_mean, colour = clan_name),
+            linewidth = 0.5) +
+  geom_line(data = plot_data,
+            aes(x = from, y = after1y_effort_max, colour = clan_name),
+            linewidth = 0.25, lty = 2) +
+  ## X TICKS
+  annotate(geom = "segment",
+           x = seq(as.Date("1997-01-01"),
+                   as.Date("2023-12-01"), by = "6 month"),
+           xend = seq(as.Date("1997-01-01"),
+                      as.Date("2023-12-01"), by = "6 month"),
+           y = -0.03, yend = 0,
+           lineend = "round", linejoin = "round") +
+    annotate(geom = "segment",
+             x = seq(as.Date("2000-01-01"),
+                     as.Date("2020-01-01"), by = "5 year"),
+             xend = seq(as.Date("2000-01-01"),
+                        as.Date("2020-01-01"), by = "5 year"),
+             y = -0.055, yend = 0,
+             lineend = "round", linejoin = "round") +
+  facet_wrap(facets = ~clan_name) +
+    labs(y = "Proportion of known individuals observed") +
+  scale_colour_manual(values = hyenaR::find_clan_palette(plot_data_clan$clan)) +
+  coord_cartesian(expand = FALSE, clip = "off",
+                  ylim = c(0, 1)) +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.text.x = element_text(colour = "black",
+                                   margin = margin(t = 7),
+                                   size = 12),
+        axis.ticks.x = element_blank(),
+        axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+        axis.title.y = element_text(colour = "black", size = 15, margin = margin(r = 12)),
+        axis.line = element_line(linewidth = 0.5),
+        strip.background = element_rect(linewidth = 0.5),
+        panel.spacing.y = unit(0.75, "lines"),
+        plot.margin = margin(r = 30, t = 10, b = 10)))
+
+ggsave(plot = effort_plot, filename = here::here("./plots/effort_plot.png"), dpi = 600,
+       width = 9, height = 5)
