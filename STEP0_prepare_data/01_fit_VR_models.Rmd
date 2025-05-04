@@ -300,7 +300,7 @@ Best model is logit with age polynome 2 and no exponent.
 ```{r}
 ##Save output to include in supp material
 write.csv(output_table |> 
-            mutate(across(logLik:Brier, \(x) round(x, 4)),
+            mutate(across(logLik:Brier, \(x) round(x, 5)),
                    n = 1:n()) |> 
             ## Only include top 10
             ## Always include null model as well
@@ -346,6 +346,12 @@ plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all
 ggplot(data = plot_data) +
   geom_line(aes(x = clan_size, y = value, colour = rank_category2)) +
   facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
+```
+
+#### Parameter estimates
+
+```{r}
+summary(best_Brier)
 ```
 
 ### Male pre-dispersal survival
@@ -441,7 +447,7 @@ Best model is probit with age polynome 2 and no exponent.
 ```{r}
 ##Save output to include in supp material
 write.csv(output_table |> 
-            mutate(across(logLik:Brier, \(x) round(x, 4)),
+            mutate(across(logLik:Brier, \(x) round(x, 5)),
                    n = 1:n()) |> 
             ## Only include top 10
             ## Always include null model as well
@@ -487,6 +493,12 @@ plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all
 ggplot(data = plot_data) +
   geom_line(aes(x = clan_size, y = value, colour = rank_category2)) +
   facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
+```
+
+#### Parameter estimates
+
+```{r}
+summary(best_probit)
 ```
 
 ### Male post-dispersal survival
@@ -580,7 +592,7 @@ Logit with slight exponent (1.4) and 2nd order polynomial is best.
 ```{r}
 ##Save output to include in supp material
 write.csv(output_table |> 
-            mutate(across(logLik:Brier, \(x) round(x, 4)),
+            mutate(across(logLik:Brier, \(x) round(x, 5)),
                    n = 1:n()) |> 
             ## Only include top 10
             ## Always include null model as well
@@ -626,6 +638,12 @@ plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all
 ggplot(data = plot_data) +
   geom_line(aes(x = clan_size, y = value, colour = post_dispersal_status)) +
   facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
+```
+
+#### Parameter estimates
+
+```{r}
+summary(best_Brier)
 ```
 
 ### Primiparous reproduction
@@ -711,7 +729,7 @@ Probit model with no exponent is best.
 ```{r}
 ##Save output to include in supp material
 write.csv(output_table |> 
-            mutate(across(logLik:Brier, \(x) round(x, 4)),
+            mutate(across(logLik:Brier, \(x) round(x, 5)),
                    n = 1:n()) |> 
             ## Only include top 10
             ## Always include null model as well
@@ -770,6 +788,12 @@ plot_data <- expand.grid(start_clan = "A", clan_size = 100, after1y_effort_all =
 ggplot(data = plot_data) +
   geom_line(aes(x = months, y = value, colour = rank_category2)) +
   facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
+```
+
+#### Parameter estimates
+
+```{r}
+summary(best_probit)
 ```
 
 ### Multiparous reproduction
@@ -853,7 +877,7 @@ Logit model with no exponent is best.
 ```{r}
 ##Save output to include in supp material
 write.csv(output_table |> 
-            mutate(across(logLik:Brier, \(x) round(x, 4)),
+            mutate(across(logLik:Brier, \(x) round(x, 5)),
                    n = 1:n()) |> 
             ## Only include top 10
             ## Always include null model as well
@@ -912,6 +936,12 @@ plot_data <- expand.grid(start_clan = "A", clan_size = 100, after1y_effort_all =
 ggplot(data = plot_data) +
   geom_line(aes(x = months, y = value, colour = rank_category2)) +
   facet_wrap(facets = ~name, nrow = 1)
+```
+
+#### Parameter estimates
+
+```{r}
+summary(best_Brier)
 ```
 
 ### Twinning
@@ -1004,7 +1034,7 @@ Probit model with 0.8 exponent is best.
 ```{r}
 ##Save output to include in supp material
 write.csv(output_table |> 
-            mutate(across(logLik:Brier, \(x) round(x, 4)),
+            mutate(across(logLik:Brier, \(x) round(x, 5)),
                    n = 1:n()) |> 
             ## Only include top 10
             ## Always include null model as well
@@ -1052,6 +1082,12 @@ plot_data <- expand.grid(start_clan = "A", clan_size = 0:200, after1y_effort_all
 ggplot(data = plot_data) +
   geom_line(aes(x = clan_size, y = value, colour = rank_category2)) +
   facet_wrap(facets = ~name, scales = "free_y", nrow = 1)
+```
+
+#### Parameter estimates
+
+```{r}
+summary(best_probit)
 ```
 
 ### Male dispersal
@@ -1133,7 +1169,7 @@ Probit model with 0.8 exponent is best.
 ```{r}
 ##Save output to include in supp material
 write.csv(output_table |> 
-            mutate(across(logLik:Brier, \(x) round(x, 4)),
+            mutate(across(logLik:Brier, \(x) round(x, 5)),
                    n = 1:n()) |> 
             ## Only include top 10
             ## Always include null model as well
