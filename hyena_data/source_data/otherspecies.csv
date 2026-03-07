@@ -1,0 +1,104 @@
+name,name2,species,sex,age,remarks
+AW-01,,aardwolf,1,adult,road kill
+AW-02,,aardwolf,2,adult,road kill
+AW-03,,aardwolf,2,adult,road kill
+AW-04,,aardwolf,1,adult,
+FX-01,Ome,bat-eared fox,,adult,same name given to different individuals
+FX-02,FX-01,bat-eared fox,1,adult,same name given to different individuals
+FX-03,FX-02,bat-eared fox,,adult,
+FX-04,FX-03,bat-eared fox,,adult,
+BJ-01,,black-backed jackal,2,adult,road kill
+BJ-02,,black-backed jackal,1,adult,
+BJ-03,,black-backed jackal,1,adult,
+BU-01,,buffalo,1,adult,
+BU-02,,buffalo,1,adult,
+BU-03,,buffalo,2,subadult,
+BU-04,,buffalo,,,
+CA-01,,camel,2,adult,
+CA-02,,camel,1,adult,
+CA-03,,camel,1,adult,
+CA-04,,camel,1,adult,
+CA-05,,camel,2,adult,
+CA-06,,camel,1,adult,
+CA-07,,camel,2,adult,
+Ch-0X,Ch-47 or Ch-48,cheetah,1,adult,
+Ch-01,,cheetah,2,adult,
+Ch-09,,cheetah,2,subadult,
+Cf-02,,domestic dog,,,
+Cfa-01,,domestic dog,2,adult,
+EA-01,,donkey,,adult,
+EA-02,,donkey,,adult,
+EA-03,,donkey,,adult,
+EA-04,,donkey,,adult,
+EA-05,,donkey,,adult,
+EA-06,,donkey,,adult,
+EA-07,,donkey,,adult,
+EA-08,,donkey,,adult,
+EA-09,,donkey,,adult,
+EA-10,,donkey,,adult,
+Laf-01,,elephant,1,adult,
+Laf-02,,elephant,1,adult,
+GO-01,Legine,goat,1,adult,
+GO-02,Kine,goat,2,adult,
+GO-03,,goat,2,adult,
+GO-05,,goat,1,adult,
+GO-06,,goat,2,adult,
+GO-07,,goat,2,adult,
+GO-08,,goat,2,adult,
+GO-10,,goat,2,adult,
+GO-11,,goat,2,adult,
+GO-12,,goat,2,adult,
+GO-13,,goat,2,adult,
+GO-14,,goat,2,adult,
+GO-15,,goat,2,adult,
+GO-16,,goat,2,adult,
+GO-17,,goat,2,adult,
+GO-18,,goat,1,adult,
+CE-00X,,lion,2,adult,
+CE-020,,lion,2,adult,
+CE-021,,lion,2,adult,
+LI-01,,lion,2,adult,speared by Maasai close to Seneto
+LI-02,,lion,2,adult,speared by Maasai close to Olduvai
+LI-03,Ple 703,lion,,cub,"Crater cub killed by male lions, p.m. by Dr Fyumagwa"
+LI-04,,lion,2,adult,from central pride
+LI-05,,lion,2,adult,
+LI-06,,lion,2,adult,from lakette 2 pride
+LK-001,,lion,1,adult,seen dead close to former airstrip inside Crater and collected by BBC filmers Owen & Amanda
+LK-023,,lion,1,adult,
+MG-017,,lion,2,adult,
+MG-030,,lion,1,adult,
+rhino,,rhino,2,adult,
+SE-01,,serval,,adult,"coll in Serengeti by Thomas Shabani, could also be caracal?"
+SE-02,,serval,,adult,
+SH-01,Leger,sheep,1,adult,
+SH-02,Neger,sheep,2,adult,
+SH-05,,sheep,1,adult,
+SH-06,,sheep,2,adult,
+SH-07,,sheep,2,adult,
+SH-08,,sheep,2,adult,
+SH-09,,sheep,2,adult,
+Hhy-00,,striped hyaena,,adult,not 100% that this really was a striped hyaena
+Hhy-01,,striped hyaena,2,adult,
+Hhy-02,,striped hyaena,1,foetus,foetus of Hhy-01
+Hhy-03,,striped hyaena,2,foetus,foetus of Hhy-01
+Hhy-04,,striped hyaena,,adult,road kill
+TG-01,,Thomson gazelle,2,adult,
+WTM-01,,white-tailed mongoose,1,adult,not sure about age-sex
+WTM-02,,white-tailed mongoose,2,adult,
+WD-01,,wild dog?,,,
+WD-02,Lpi579_WD4900,wild dog,,adult,
+WI-01,,wildebeest,1,adult,
+WI-02,,wildebeest,1,subadult,
+WI-03,,wildebeest,1,adult,
+WI-04,,wildebeest,1,adult,
+WI-05,,wildebeest,,subadult,
+WI-06,,wildebeest,1,adult,
+EQ-01,,zebra,2,adult,
+EQ-02,,zebra,,,coll by HW in Serengeti
+EQ-03,,zebra,1,adult,
+EQ-04,,zebra,2,adult,
+EQ-05,,zebra,2,adult,
+EQ-06,,zebra,2,adult,
+EQ-07,,zebra,1,adult,
+EQ-08,,zebra,2,adult,
+EQ-09,,zebra,,adult,

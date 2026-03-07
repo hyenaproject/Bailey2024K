@@ -1,0 +1,16 @@
+clanID,clanname,location1,location2,latitude,longitude
+A,Airstrip,floor,northwest,-3.15,35.52
+B,Barabara,rim,southeast,,
+C,Campsite,rim,east,,
+E,Engitati,floor,north,-3.145,35.57
+F,Forest,floor,west,-3.19,35.5
+K,Kimba,rim,west,-3.22167,35.4805
+L,Lemala,floor,centernorth,-3.1672,35.5566
+M,Munge,floor,east,-3.16,35.62
+N,Ngoitokitok,floor,southeast,-3.21,35.6
+R,Rim,rim,north,,
+S,Shamba,floor,centersouth,-3.2,35.573
+T,Triangle,floor,southeast,-3.22,35.54
+U,Umba,rim,northeast,,
+Y,transient,unspecified,unspecified,,
+X,unknown,outside,,,

@@ -200,6 +200,7 @@ if (scale == "month"){
 
   ### GENERATED IN STEP0_prepare_data/demographic_data.R
   real_pop_separate <- readRDS(here::here("./data/Nplot_data_separate_year.RDS"))
+  real_pop_separate_mo <- readRDS(here::here("./data/Nplot_data_separate_1month.RDS"))
 
   ### Calculate sex ratio (male/all females)
   ratios <- real_pop_separate %>%
@@ -215,14 +216,117 @@ if (scale == "month"){
   # PLOT
 
   ## Change in N over time
+  ## After feedback from Oliver, this process of counting *all individuals alive in a year*
+  ## He views as an overestimate.
+  ## Instead, we could use:
+  ## a) Single snapshot (1st June)
+  ## b) the *max monthly snapshot*
 
-  plot_data <- real_pop_separate %>%
+  plot_data_single <- real_pop_separate_mo |>
+    filter(lubridate::month(date) == 6) |>
     tidyr::pivot_longer(cols = young:ad_fem) %>%
     #Remove unknown sex (small and is not detectable on plot)
     # filter(name != "ad_unk") %>%
     dplyr:::mutate(name = factor(name, levels = c("young", "ad_male", "ad_fem")),
                    adult_edge = name != "ad_fem") |>
     filter(lubridate::year(date) >= start_year & lubridate::year(date) <= end_year)
+
+  end_vals_single <- plot_data_single %>%
+    group_by(name) %>%
+    slice(n()) %>%
+    mutate(grp = grepl(name, pattern = "ad_")) %>%
+    group_by(grp) %>%
+    summarise(date = first(date),
+              value = sum(value))
+
+  sex_vals_single <- plot_data_single %>%
+    group_by(name) %>%
+    slice(n() - 1) %>%
+    filter(name != "young")
+
+  N_plot <- ggplot(data = plot_data_single) +
+    geom_col(aes(x = date - months(6), y = value, fill = name),
+             colour = "black", linewidth = 0.25) +
+    ## KRUUK ESTIMATE
+    geom_text(aes(x = as.Date("1999-01-01"),
+                  y = (385 + 40)),
+              label = "Adult population\nestimate (1960s)", size = 3,
+              hjust = 1) +
+    annotate(geom = "segment",
+             x = as.Date("1995-01-01"),
+             xend = end_vals$date[1] + 200,
+             y = 385, yend = 385,
+             lineend = "round", linejoin = "round", lty = 2,
+             linewidth = 0.5) +
+    ## X TICKS
+    annotate(geom = "segment",
+             x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
+             xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "1 year"),
+             y = -10, yend = 0,
+             lineend = "round", linejoin = "round") +
+    annotate(geom = "segment",
+             x = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
+             xend = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 year"),
+             y = -20, yend = 0,
+             lineend = "round", linejoin = "round") +
+    ## Y TICKS
+    annotate(geom = "segment",
+             x = as.Date("1995-01-01"),
+             xend = as.Date("1995-01-01") - 75,
+             y = seq(0, 800, 100), yend = seq(0, 800, 100),
+             lineend = "round", linejoin = "round") +
+    ## LABEL TEXT
+    annotate(geom = "segment",
+             x = end_vals_single$date[1] + 75,
+             xend = end_vals_single$date[1] + 75,
+             y = 5, yend = end_vals_single$value[2] - 5,
+             lineend = "round", linejoin = "round", linewidth = 0.75) +
+    annotate(geom = "segment",
+             x = end_vals_single$date[1] + 75,
+             xend = end_vals_single$date[1] + 75,
+             y = end_vals_single$value[2] + 5, yend = end_vals_single$value[2] + end_vals_single$value[1] - 5,
+             lineend = "round", linejoin = "round", linewidth = 0.75) +
+    ## ADD TEXT FOR AD/YOUNG
+    annotate(geom = "text",
+             x = end_vals_single$date[1] + 150,
+             y = mean(c(5, end_vals_single$value[2] - 5)),
+             label = "ADULT", hjust = 0, size = 4) +
+    annotate(geom = "text",
+             x = end_vals_single$date[1] + 150,
+             y = mean(c(end_vals_single$value[2] + 5, end_vals_single$value[2] + end_vals_single$value[1] - 5)),
+             label = "JUVENILE", hjust = 0, size = 4) +
+    ## ADD TEXT FOR MALE/FEMALE
+    annotate(geom = "text",
+             x = sex_vals_single$date[1] + 275,
+             y = mean(c(sex_vals_single$value[2], sex_vals_single$value[2] + sex_vals_single$value[1])),
+             label = "MALE", hjust = 1, size = 3.5,
+             colour = "white") +
+    annotate(geom = "text",
+             x = sex_vals_single$date[1] + 275,
+             y = mean(c(0, sex_vals_single$value[2])),
+             label = "FEMALE", hjust = 1, size = 3.5,
+             colour = "black") +
+    scale_fill_manual(values = rev(c("grey90", "grey55", "grey20"))) +
+    scale_linewidth_discrete(range = c(0, 0.75)) +
+    scale_x_date(breaks = seq(as.Date("1995-01-01"), as.Date("2025-01-01"), by = "5 years"),
+                 date_labels = "%Y") +
+    scale_y_continuous(breaks = seq(0, 800, 100),
+                       name = "Number of individuals") +
+    coord_cartesian(expand = FALSE, clip = "off",
+                    ylim = c(0, 800),
+                    xlim = c(as.Date("1995-01-01"), as.Date("2025-01-01"))) +
+    theme_classic() +
+    theme(legend.position = "none",
+          axis.title.x = element_blank(),
+          axis.text.x = element_text(colour = "black",
+                                     margin = margin(t = 10), size = 12),
+          axis.ticks = element_blank(),
+          axis.text.y = element_text(colour = "black", size = 12, margin = margin(r = 5)),
+          axis.title.y = element_text(colour = "black", size = 17, margin = margin(r = 12)),
+          plot.margin = margin(r = 30, t = 10, b = 10))
+
+  ggsave(here::here("./plots/N_v_time_biorxivFix.png"), dpi = 600,
+         width = 9, height = 5)
 
   end_vals <- plot_data %>%
     group_by(name) %>%

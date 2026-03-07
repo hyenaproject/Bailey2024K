@@ -75,9 +75,17 @@ nrow(Kplot_data)/sum(1/Kplot_data$globalK) ## Harmonic mean
 
 ### GENERATED IN STEP0_prepare_data/demographic_data.R
 if (scale == "month") {
-  real_pop <- readRDS(here::here("./data/Nplot_data_month.RDS"))
+  real_pop <- readRDS(here::here("./data/Nplot_data_1month.RDS"))
 } else if (scale == "year") {
-  real_pop <- readRDS(here::here("./data/Nplot_data_year.RDS"))
+  ## Again, like Fig 2 we can't show all individuals alive but rather individuals at a snapshot
+  real_pop_dates <- readRDS(here::here("./data/Nplot_data_year.RDS"))
+  real_pop <- readRDS(here::here("./data/Nplot_data_1month.RDS")) |>
+    filter(lubridate::month(date) == 6) |>
+    select(-from, -to) |>
+    mutate(year = lubridate::year(date)) |>
+    left_join(real_pop_dates |>
+                select(year, from, to)) |>
+    filter(year <= 2022)
 }
 
 ## Marginal K (i.e. not time-varying)
@@ -220,7 +228,7 @@ K_plot <- ggplot() +
 
 combo_plot <- K_plot + K_boxplot + patchwork::plot_layout(widths = c(17, 1))
 
-ggsave(plot = combo_plot, filename = here::here("./plots/abs_KN_v_time_marginal.png"), dpi = 600,
+ggsave(plot = combo_plot, filename = here::here("./plots/abs_KN_v_time_marginal_biorxivFix.png"), dpi = 600,
        width = 8, height = 5)
 
 ## Same plot but with N year lines
@@ -297,5 +305,5 @@ K_plot <- ggplot() +
 
 combo_plot <- K_plot + K_boxplot + patchwork::plot_layout(widths = c(17, 1))
 
-ggsave(plot = combo_plot, filename = here::here("./plots/abs_KN_v_time_marginal_year.png"), dpi = 600,
+ggsave(plot = combo_plot, filename = here::here("./plots/abs_KN_v_time_marginal_year_biorxivFix.png"), dpi = 600,
        width = 8, height = 5)
